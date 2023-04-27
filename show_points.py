@@ -8,9 +8,12 @@ dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 
-stats_json = os.getenv("STATS_JSON")
+traffic_json = os.getenv("TRAFFIC_JSON")  # TRAFFIC_JSON PARKING_JSON
+parking_json = os.getenv("PARKING_JSON")
 
-datas = json.load(open(stats_json))
+traffic = json.load(open(traffic_json))
+parking = json.load(open(parking_json))
+
 width, height = 1280, 720
 img = np.zeros((height, width, 3), dtype=np.uint8)
 
@@ -24,14 +27,16 @@ def get_color(weigh):
         return (0, 255, 0)
 
 
-for key in datas.keys():
-    weigh = int(datas[key])
-    color = get_color(weigh)
-    print(type(color))
+for key in traffic.keys():
+    weigh = int(traffic[key])
     coor = map(int, eval(key))
-    cv.circle(img, tuple(coor), weigh, color, -1)
-    if cv.waitKey(25) & 0xFF == ord('q'):
-        break
+    cv.circle(img, tuple(coor), weigh, (0, 255, 0), -1)
+
+for key in parking.keys():
+    weigh = int(parking[key])
+    coor = map(int, eval(key))
+    cv.circle(img, tuple(coor), weigh,(255, 0, 0), -1)
+
 
 cv.imshow('image', img)
 cv.waitKey(0)

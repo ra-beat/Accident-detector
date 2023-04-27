@@ -18,7 +18,9 @@ print(stream)
 
 cap = cv.VideoCapture(stream, cv.CAP_FFMPEG)
 model = YOLO("yolov8x.pt")
+
 interval_video = 4
+
 stats = {}
 crash = {}
 crash_json = {}
@@ -31,8 +33,8 @@ neighbour_traffic = {}
 
 all_stat_json = {}
 
-threshold_coordinates = 2  # Погрешность по координатам
-threshold_reiteration = 5  # Пороговое значение повторений, возможно использовать для определения соседей
+threshold_coordinates = 4  # Погрешность по координатам
+threshold_reiteration = 10  # Пороговое значение повторений, возможно использовать для определения соседей
 
 frame_count = 0
 last_time = 10
@@ -46,16 +48,13 @@ def detector_cars(frame):
 
 
 def statistics(car):
+    car = tuple(map(int, car))
     for key in stats.keys():
         all_stat_json[str(key)] = int(stats[key])
 
         if fault_coordinates(key, car):
             stats[key] += 1
             crash[key] = stats[key]
-
-            if reiteration_coordinates(stats[key]):
-                crash_json[str(key)] = int(stats[key])
-                crash[key] = stats[key]
 
         if neighbour_parking_detect(key, car):
             parking_json[str(key)] = int(stats[key])
@@ -81,7 +80,7 @@ def crash_show(crashs, frame):
             option = crashs[crash]
             rgb = marker_rgb(option)
 
-            cv.circle(frame, xy, option, rgb)
+            cv.circle(frame, xy, option, rgb, -1)
             if cv.waitKey(25) & 0xFF == ord('q'):
                 break
         cv.imshow('Frame', frame)
@@ -91,14 +90,10 @@ def crash_show(crashs, frame):
 
 
 def marker_rgb(option):
-    steps = option
-    values = np.linspace(0, 1, steps)
-
-    r = int(round(values[option - 3] * 255))
-    g = int(round((1 - values[option - 3]) * values[option - 3] * 2 * 255))
-    b = int(round((1 - values[option - 3]) * 255))
-    color_tuple = (r, g, b)
-    return color_tuple
+    if option <= threshold_reiteration:
+        return (0, 255, 0) # зеленый когда меньше или равен
+    if option > threshold_reiteration:
+        return (255, 0, 0)  # Красный когда вес больше порогового значения
 
 
 def stats_write(stats_list):
@@ -148,7 +143,7 @@ def neighbour_parking_detect(key, car):
 
 
 def neighbour_traffic_detect(key, car):
-    if stats[key] < threshold_reiteration and np.abs(np.array(key) - car).max() >= stats[key]:
+    if stats[key] < threshold_reiteration and np.abs(np.array(key) - car).max() <= threshold_coordinates:
         print("+")
         return True
     else:
@@ -177,7 +172,7 @@ while cap.isOpened():
         if cv.waitKey(25) & 0xFF == ord('q'):
             if stats_write(all_stat_json):
                 if neighbour_parking_write(parking_json):
-                    if neighbour_parking_write(traffic_json):
+                    if neighbour_traffic_write(traffic_json):
                         break
 
     else:

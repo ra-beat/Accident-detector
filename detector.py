@@ -11,9 +11,8 @@ if os.path.exists(dotenv_path):
 
 stream = os.getenv("STREAM")
 stats_json = os.getenv("STATS_JSON")
-# neighbour_parking_json = os.getenv("PARKING_JSON")
-# neighbour_traffic_json = os.getenv("TRAFFIC_JSON")
-
+neighbour_parking_json = os.getenv("PARKING_JSON")
+neighbour_traffic_json = os.getenv("TRAFFIC_JSON")
 
 print(stream)
 
@@ -29,7 +28,6 @@ neighbour_parking = {}
 
 traffic_json = {}
 neighbour_traffic = {}
-
 
 all_stat_json = {}
 
@@ -59,17 +57,16 @@ def statistics(car):
                 crash_json[str(key)] = int(stats[key])
                 crash[key] = stats[key]
 
-        if neighbour_parking(key, car):
+        if neighbour_parking_detect(key, car):
             parking_json[str(key)] = int(stats[key])
             neighbour_parking[key] = stats[key]
 
-        if neighbour_traffic(key, car):
+        if neighbour_traffic_detect(key, car):
             traffic_json[str(key)] = int(stats[key])
             neighbour_traffic[key] = stats[key]
 
-
-
-    print("Соседи => ", len(neighbour_parking))
+    print("Парковка => ", len(neighbour_parking))
+    print("Проезжая часть => ", len(neighbour_traffic))
     print("Всего =>", len(stats))
     key = tuple(car)
     stats[key] = 1
@@ -114,7 +111,7 @@ def stats_write(stats_list):
 
 def neighbour_parking_write(neighbour_list):
     print("Write neighbour parking")
-    with open(parking_json, 'w') as file:
+    with open(neighbour_parking_json, 'w') as file:
         json_neighbour = json.dumps(neighbour_list)
         file.write(json_neighbour)
         return True
@@ -122,7 +119,7 @@ def neighbour_parking_write(neighbour_list):
 
 def neighbour_traffic_write(neighbour_list):
     print("Write neighbour traffic")
-    with open(traffic_json, 'w') as file:
+    with open(neighbour_traffic_json, 'w') as file:
         json_neighbour = json.dumps(neighbour_list)
         file.write(json_neighbour)
         return True
@@ -142,7 +139,7 @@ def reiteration_coordinates(key):
         return False
 
 
-def neighbour_parking(key, car):
+def neighbour_parking_detect(key, car):
     if stats[key] > threshold_reiteration and np.abs(np.array(key) - car).max() <= stats[key]:
         print("*")
         return True
@@ -150,7 +147,7 @@ def neighbour_parking(key, car):
         return False
 
 
-def neighbour_traffic(key, car):
+def neighbour_traffic_detect(key, car):
     if stats[key] < threshold_reiteration and np.abs(np.array(key) - car).max() >= stats[key]:
         print("+")
         return True

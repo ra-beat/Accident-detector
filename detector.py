@@ -56,6 +56,7 @@ def statistics(car):
             stats[key] += 1
             crash[key] = stats[key]
 
+        # Вот здесь не происходит проверка на погрешность от этого появляются "битые данные"
         if neighbour_parking_detect(key, car):
             parking_json[str(key)] = int(stats[key])
             neighbour_parking[key] = stats[key]

@@ -14,12 +14,8 @@ stats_json = os.getenv("STATS_JSON")
 neighbour_parking_json = os.getenv("PARKING_JSON")
 neighbour_traffic_json = os.getenv("TRAFFIC_JSON")
 
-print(stream)
-
 cap = cv.VideoCapture(stream, cv.CAP_FFMPEG)
 model = YOLO("yolov8x.pt")
-
-interval_video = 4
 
 stats = {}
 crash = {}
@@ -33,7 +29,10 @@ neighbour_traffic = {}
 
 all_stat_json = {}
 
-threshold_coordinates = 4  # Погрешность по координатам
+
+interval_video = 4
+
+threshold_coordinates = 14  # Погрешность по координатам
 threshold_reiteration = 10  # Пороговое значение повторений, возможно использовать для определения соседей
 
 frame_count = 0
@@ -43,7 +42,7 @@ last_time = 10
 def detector_cars(frame):
     results = model(frame, conf=0.22)  # Распознавание машины.
     results = results[0].numpy()
-    cars_results = results.boxes[results.boxes.cls == 2].xywh[:, :2]  # Координаты, для кругов
+    cars_results = results.boxes[results.boxes.cls == 1].xywh[:, :2]  # Координаты, для кругов
     return cars_results
 
 
@@ -58,10 +57,12 @@ def statistics(car):
 
         # Вот здесь не происходит проверка на погрешность от этого появляются "битые данные"
         if neighbour_parking_detect(key, car):
+
             parking_json[str(key)] = int(stats[key])
             neighbour_parking[key] = stats[key]
 
         if neighbour_traffic_detect(key, car):
+
             traffic_json[str(key)] = int(stats[key])
             neighbour_traffic[key] = stats[key]
 

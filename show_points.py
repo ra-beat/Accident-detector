@@ -14,7 +14,7 @@ parking_json = os.getenv("PARKING_JSON")
 traffic = json.load(open(traffic_json))
 parking = json.load(open(parking_json))
 
-width, height = 1280, 720
+width, height = 1920, 1080
 img = np.zeros((height, width, 3), dtype=np.uint8)
 
 
@@ -27,15 +27,27 @@ def get_color(weigh):
         return (0, 255, 0)
 
 
-for key in traffic.keys():
-    weigh = int(traffic[key])
-    coor = map(int, eval(key))
-    cv.circle(img, tuple(coor), weigh, (0, 255, 0), -1)
+setT = set(traffic)
+setP = set(parking)
 
-for key in parking.keys():
-    weigh = int(parking[key])
+res = setP & setT
+res = res & setP
+
+print(res)
+# for key in traffic.keys():
+#     weigh = int(traffic[key])
+#     coor = map(int, eval(key))
+#     cv.circle(img, tuple(coor), weigh, (0, 255, 0), -1)
+#
+# for key in parking.keys():
+#     weigh = int(parking[key])
+#     coor = map(int, eval(key))
+#     cv.circle(img, tuple(coor), weigh,(255, 0, 0), -1)
+#
+#
+for key in res:
     coor = map(int, eval(key))
-    cv.circle(img, tuple(coor), weigh,(255, 0, 0), -1)
+    cv.circle(img, tuple(coor), 10, (255, 255, 255), -1)
 
 
 cv.imshow('image', img)

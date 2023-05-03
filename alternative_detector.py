@@ -16,7 +16,7 @@ neighbour_traffic_json = os.getenv("TRAFFIC_JSON")
 
 # cap = cv.VideoCapture(stream, cv.CAP_FFMPEG)
 cap = cv.VideoCapture('crash.mp4')
-cap.set(cv.CAP_PROP_POS_MSEC, 10000)
+cap.set(cv.CAP_PROP_POS_MSEC, 10000)  # берется кадр каждые 10 секунд
 model = YOLO("yolov8x.pt")
 
 interval_video = 1
@@ -41,6 +41,8 @@ def statistic(results):
 
         if stats[car] == limit_stats:
             print(car)
+
+
 
     count += 1
     print("Count=", count)

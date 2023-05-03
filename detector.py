@@ -3,6 +3,7 @@ import cv2 as cv
 import numpy as np
 import json
 import os
+import time
 from dotenv import load_dotenv
 from collections import OrderedDict
 
@@ -16,73 +17,49 @@ neighbour_parking_json = os.getenv("PARKING_JSON")
 neighbour_traffic_json = os.getenv("TRAFFIC_JSON")
 
 cap = cv.VideoCapture(stream, cv.CAP_FFMPEG)
+cap.set(cv.CAP_PROP_POS_MSEC, 10000)  # берется кадр каждые 10 секунд
 model = YOLO("yolov8x.pt")
 
 stats = {}
 crash = {}
-crash_json = {}
-
-parking_json = {}
-neighbour_parking = {}
-
-traffic_json = {}
-neighbour_traffic = {}
-
-all_stat_json = {}
-
-
+parking = {}
+traffic = {}
 interval_video = 4
 
 threshold_coordinates = 14  # Погрешность по координатам
-threshold_reiteration = 10  # Пороговое значение повторений, возможно использовать для определения соседей
-threshold_max = 20 # Максимальное возможное количество повторений
-
-frame_count = 0
-last_time = 10
+threshold_reiteration = 6  # Пороговое значение повторений, возможно использовать для определения соседей
+threshold_max = 10 # Максимальное возможное количество повторений
 
 
 def detector_cars(frame):
     results = model(frame, conf=0.22)  # Распознавание машины.
     results = results[0].numpy()
-    cars_results = results.boxes[results.boxes.cls == 2].xywh[:, :2]  # Координаты, для кругов
-    return cars_results
+    results = results.boxes[results.boxes.cls == 2].xywh[:, :2]  # Координаты, для кругов
+    return results
 
 
 def statistics(car):
     car = tuple(map(int, car))
     for key in stats.keys():
-        all_stat_json[str(key)] = int(stats[key])
-
-        if fault_coordinates(key, car):
+        if np.abs(np.array(key) - car).max() <= threshold_coordinates:
             if stats[key] <= threshold_max:
-
                 stats[key] += 1
-                crash[key] = stats[key]
 
         # Вот здесь не происходит проверка на погрешность от этого появляются "битые данные"
-        if neighbour_parking_detect(key, car):
+        # Для того что бы значения не дублировались, нужно брать среднее значение и записывать в спписок
 
-            parking_json[str(key)] = int(stats[key])
-            neighbour_parking[key] = stats[key]
+        if stats[key] > threshold_reiteration and np.abs(np.array(key) - car).max() <= stats[key]:
+            parking[key] = stats[key]
 
-        if neighbour_traffic_detect(key, car):
+        if stats[key] < threshold_reiteration and np.abs(np.array(key) - car).max() <= threshold_coordinates:
+            traffic[key] = stats[key]
 
-            traffic_json[str(key)] = int(stats[key])
-            neighbour_traffic[key] = stats[key]
-
-    print("Парковка => ", len(neighbour_parking))
-    print("Проезжая часть => ", len(neighbour_traffic))
+    print("Парковка => ", len(parking))
+    print("Проезжая часть => ", len(traffic))
     print("Всего =>", len(stats))
     key = tuple(car)
-
-    # Удаляю праковку получаю отсортированную статистику
-    if len(neighbour_parking) > 5:
-        accident = filter_traffic()
-        if accident >= 7:
-            accident_show(accident)
-
     stats[key] = 1
-    return crash
+
 
 def accident_show(xy):
     width, height = 1920, 1080
@@ -95,24 +72,25 @@ def accident_show(xy):
         cap.release()
         cv.destroyAllWindows()
 
-def crash_show(crashs, frame):
+def show():
     width, height = 1920, 1080
     img = np.zeros((height, width, 3), dtype=np.uint8)
-    print("--------------------------")
-    if len(crashs) != 0:
-        for crash in crashs:
 
-            xy = tuple(int(x) for x in crash)
-            option = crashs[crash]
-            rgb = marker_rgb(option)
-
-            cv.circle(img, xy, option, rgb, -1)
-            if cv.waitKey(25) & 0xFF == ord('q'):
-                break
+    for par in parking.keys():
+        cv.circle(img, par, 10, (255,255,255), -1)
         cv.imshow('Frame', img)
-        if cv.waitKey(25) & 0xFF == ord('q'):
-            cap.release()
-            cv.destroyAllWindows()
+
+    for key in traffic.keys():
+        cv.circle(img, key, 4, (0, 0, 255), -1)
+        cv.imshow('Frame', img)
+
+    cv.imshow('Frame', img)
+    if cv.waitKey(25) & 0xFF == ord('q'):
+        cap.release()
+        cv.destroyAllWindows()
+        return True
+
+
 
 
 def marker_rgb(option):
@@ -122,114 +100,27 @@ def marker_rgb(option):
         return (255, 0, 0)  # Красный когда вес больше порогового значения
 
 
-def stats_write(stats_list):
-    print('Write Stats')
-    with open(stats_json, 'w') as file:
-        json_stat = json.dumps(stats_list)
-        file.write(json_stat)
-        return True
+def play():
 
+    if not cap.isOpened():
+        print("Ошибка открытия файла или потока")
 
-def neighbour_parking_write(neighbour_list):
-    print("Write neighbour parking")
-    with open(neighbour_parking_json, 'w') as file:
-        json_neighbour = json.dumps(neighbour_list)
-        file.write(json_neighbour)
-        return True
-
-
-def neighbour_traffic_write(neighbour_list):
-    print("Write neighbour traffic")
-    with open(neighbour_traffic_json, 'w') as file:
-        json_neighbour = json.dumps(neighbour_list)
-        file.write(json_neighbour)
-        return True
-
-
-def fault_coordinates(key, car):
-    if np.abs(np.array(key) - car).max() <= threshold_coordinates:
-        return True
-    else:
-        return False
-
-
-def reiteration_coordinates(key):
-    if key > threshold_reiteration:
-        return True
-    else:
-        return False
-
-
-def neighbour_parking_detect(key, car):
-    if stats[key] > threshold_reiteration and np.abs(np.array(key) - car).max() <= stats[key]:
-        print("*")
-        return True
-    else:
-        return False
-
-
-def neighbour_traffic_detect(key, car):
-    if stats[key] < threshold_reiteration and np.abs(np.array(key) - car).max() <= threshold_coordinates:
-        print("+")
-        return True
-    else:
-        return False
-
-
-def filter_traffic():
-
-    keys_stats, values_stats = np.array(list(stats.keys())), np.array(list(stats.values()))
-    keys_parking, values_parking = np.array(list(neighbour_parking.keys())), np.array(list(neighbour_parking.values()))
-
-    print(keys_parking , '->', values_parking)
-    print("filter")
-    distances = np.sqrt(np.sum((keys_stats[:, None] - keys_parking) ** 2, axis=2))
-    # Находим позиции элементов массива, у которых расстояние между ключами меньше или равно 2
-    mask = (distances <= 2)
-
-    # Создаем массивы из всех совпадающих ключей и их значений
-    similar_keys = keys_stats[mask].tolist()
-    similar_values = values_stats[mask].tolist()
-
-    # Удаляем все схожие значения из словаря stats
-    for key, value in zip(similar_keys, similar_values):
-        del stats[key]
-
-    # Сортируем словарь stats по значению в порядке убывания и сохраняем его в виде упорядоченного словаря
-    sorted_stats = OrderedDict(sorted(stats.items(), key=lambda x: x[1], reverse=True))
-    print("-------------------------------------------------------------------------")
-    print(list(sorted_stats.keys())[0])
-    print("-------------------------------------------------------------------------")
-    return list(sorted_stats.keys())[0]
-
-
-if not cap.isOpened():
-    print("Ошибка открытия файла или потока")
-
-while cap.isOpened():
-    ret, frame = cap.read()
-    if ret:
-        if (cv.getTickCount() - last_time) / cv.getTickFrequency() >= interval_video:
+    while cap.isOpened() and len(stats) < 4000:
+        ret, frame = cap.read()
+        if ret:
             cars_results = detector_cars(frame)
 
             for cars_result in cars_results:
-                crash = statistics(cars_result)
-                crash_show(crash, frame)
+                statistics(cars_result)
 
-                if cv.waitKey(25) & 0xFF == ord('q'):
+                if 0xFF == ord('q'):
                     break
-            # cv.imshow('Frame', frame)
-            last_time = cv.getTickCount()
 
-        frame_count += 1
-        if cv.waitKey(25) & 0xFF == ord('q'):
-            if stats_write(all_stat_json):
-                if neighbour_parking_write(parking_json):
-                    if neighbour_traffic_write(traffic_json):
-                        break
+        if 0xFF == ord('q'):
+            break
+    show()
+    time.sleep(600)
 
-    else:
-        break
 
-cap.release()
-cv.destroyAllWindows()
+
+play()

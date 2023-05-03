@@ -19,9 +19,9 @@ img = np.zeros((height, width, 3), dtype=np.uint8)
 
 
 def get_color(weigh):
-    if weigh <= 3:
+    if weigh <= 8:
         return (255, 0, 0)
-    if weigh <= 6:
+    if weigh <= 10:
         return (255, 255, 0)
     if weigh <= 20:
         return (0, 255, 0)
@@ -34,15 +34,15 @@ res = setP & setT
 res = res & setP
 
 print(res)
-# for key in traffic.keys():
-#     weigh = int(traffic[key])
-#     coor = map(int, eval(key))
-#     cv.circle(img, tuple(coor), weigh, (0, 255, 0), -1)
-#
-# for key in parking.keys():
-#     weigh = int(parking[key])
-#     coor = map(int, eval(key))
-#     cv.circle(img, tuple(coor), weigh,(255, 0, 0), -1)
+for key in traffic.keys():
+    weigh = int(traffic[key])
+    coor = map(int, eval(key))
+    cv.circle(img, tuple(coor), weigh, (0, 255, 0), -1)
+
+for key in parking.keys():
+    weigh = int(parking[key])
+    coor = map(int, eval(key))
+    cv.circle(img, tuple(coor), weigh,(255, 0, 0), -1)
 #
 #
 for key in res:

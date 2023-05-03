@@ -4,6 +4,7 @@ import numpy as np
 import json
 import os
 from dotenv import load_dotenv
+from collections import OrderedDict
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 if os.path.exists(dotenv_path):
@@ -34,6 +35,7 @@ interval_video = 4
 
 threshold_coordinates = 14  # Погрешность по координатам
 threshold_reiteration = 10  # Пороговое значение повторений, возможно использовать для определения соседей
+threshold_max = 20 # Максимальное возможное количество повторений
 
 frame_count = 0
 last_time = 10
@@ -42,7 +44,7 @@ last_time = 10
 def detector_cars(frame):
     results = model(frame, conf=0.22)  # Распознавание машины.
     results = results[0].numpy()
-    cars_results = results.boxes[results.boxes.cls == 1].xywh[:, :2]  # Координаты, для кругов
+    cars_results = results.boxes[results.boxes.cls == 2].xywh[:, :2]  # Координаты, для кругов
     return cars_results
 
 
@@ -52,8 +54,10 @@ def statistics(car):
         all_stat_json[str(key)] = int(stats[key])
 
         if fault_coordinates(key, car):
-            stats[key] += 1
-            crash[key] = stats[key]
+            if stats[key] <= threshold_max:
+
+                stats[key] += 1
+                crash[key] = stats[key]
 
         # Вот здесь не происходит проверка на погрешность от этого появляются "битые данные"
         if neighbour_parking_detect(key, car):
@@ -70,11 +74,31 @@ def statistics(car):
     print("Проезжая часть => ", len(neighbour_traffic))
     print("Всего =>", len(stats))
     key = tuple(car)
+
+    # Удаляю праковку получаю отсортированную статистику
+    if len(neighbour_parking) > 5:
+        accident = filter_traffic()
+        if accident >= 7:
+            accident_show(accident)
+
     stats[key] = 1
     return crash
 
+def accident_show(xy):
+    width, height = 1920, 1080
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+    print("--------------------------")
+
+    cv.circle(img, xy, 20, (255,255,255), -1)
+    cv.imshow('Frame', img)
+    if cv.waitKey(25) & 0xFF == ord('q'):
+        cap.release()
+        cv.destroyAllWindows()
 
 def crash_show(crashs, frame):
+    width, height = 1920, 1080
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+    print("--------------------------")
     if len(crashs) != 0:
         for crash in crashs:
 
@@ -82,10 +106,10 @@ def crash_show(crashs, frame):
             option = crashs[crash]
             rgb = marker_rgb(option)
 
-            cv.circle(frame, xy, option, rgb, -1)
+            cv.circle(img, xy, option, rgb, -1)
             if cv.waitKey(25) & 0xFF == ord('q'):
                 break
-        cv.imshow('Frame', frame)
+        cv.imshow('Frame', img)
         if cv.waitKey(25) & 0xFF == ord('q'):
             cap.release()
             cv.destroyAllWindows()
@@ -152,6 +176,33 @@ def neighbour_traffic_detect(key, car):
         return False
 
 
+def filter_traffic():
+
+    keys_stats, values_stats = np.array(list(stats.keys())), np.array(list(stats.values()))
+    keys_parking, values_parking = np.array(list(neighbour_parking.keys())), np.array(list(neighbour_parking.values()))
+
+    print(keys_parking , '->', values_parking)
+    print("filter")
+    distances = np.sqrt(np.sum((keys_stats[:, None] - keys_parking) ** 2, axis=2))
+    # Находим позиции элементов массива, у которых расстояние между ключами меньше или равно 2
+    mask = (distances <= 2)
+
+    # Создаем массивы из всех совпадающих ключей и их значений
+    similar_keys = keys_stats[mask].tolist()
+    similar_values = values_stats[mask].tolist()
+
+    # Удаляем все схожие значения из словаря stats
+    for key, value in zip(similar_keys, similar_values):
+        del stats[key]
+
+    # Сортируем словарь stats по значению в порядке убывания и сохраняем его в виде упорядоченного словаря
+    sorted_stats = OrderedDict(sorted(stats.items(), key=lambda x: x[1], reverse=True))
+    print("-------------------------------------------------------------------------")
+    print(list(sorted_stats.keys())[0])
+    print("-------------------------------------------------------------------------")
+    return list(sorted_stats.keys())[0]
+
+
 if not cap.isOpened():
     print("Ошибка открытия файла или потока")
 
@@ -167,7 +218,7 @@ while cap.isOpened():
 
                 if cv.waitKey(25) & 0xFF == ord('q'):
                     break
-            cv.imshow('Frame', frame)
+            # cv.imshow('Frame', frame)
             last_time = cv.getTickCount()
 
         frame_count += 1

@@ -19,7 +19,7 @@ neighbour_traffic_json = os.getenv("TRAFFIC_JSON")
 
 # cap = cv.VideoCapture(stream, cv.CAP_FFMPEG)
 cap = cv.VideoCapture('crash.mp4')
-cap.set(cv.CAP_PROP_POS_MSEC, 10000)  # берется кадр каждые 10 секунд
+
 
 model = YOLO("yolov8x.pt")
 
@@ -168,17 +168,22 @@ def bbox_iou(boxA, boxB, x1y1x2y2=False, GIoU=False, DIoU=False, CIoU=False, eps
 if not cap.isOpened():
     print("Ошибка открытия файла или потока")
 
-while cap.isOpened():
 
+frame_interval_ms = 10000  # берется кадр каждые 10 секунд
+current_pos_ms = 0
+while cap.isOpened():
+    cap.set(cv.CAP_PROP_POS_MSEC, current_pos_ms)
     ret, frame = cap.read()
+
     if ret:
+
         cars_boxes = detector_cars(frame)
         for car_box in cars_boxes:
             statistics(car_box, frame)
 
             if 0xFF == ord('q'):
                 break
-
+    current_pos_ms += frame_interval_ms
     if 0xFF == ord('q'):
         break
 

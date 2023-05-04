@@ -20,7 +20,6 @@ neighbour_traffic_json = os.getenv("TRAFFIC_JSON")
 # cap = cv.VideoCapture(stream, cv.CAP_FFMPEG)
 cap = cv.VideoCapture('crash.mp4')
 
-
 model = YOLO("yolov8x.pt")
 
 stats = {}
@@ -30,7 +29,7 @@ traffic = {}
 interval_video = 4
 
 threshold_coordinates = 10  # Погрешность по координатам
-threshold_reiteration = 50  # Пороговое значение повторений, возможно использовать для определения соседей
+threshold_reiteration = 10  # Пороговое значение повторений, возможно использовать для определения соседей
 threshold_max = 10  # Максимальное возможное количество повторений
 
 
@@ -41,34 +40,35 @@ def detector_cars(frame):
     return tuple(box.tolist())  #
 
 
-
-
 def statistics(car_box, frame):
     # global stats
 
-    factor = 0.7
+    factor = 0.9
 
     for key in stats.keys():
         if bbox_iou(car_box, key) > factor:
+            print("++++++++++++++")
             stats[key] += 1
 
-        # elif stats[key] > 5:
-        #     stats[key] -= 1
+        else:
+            stats[key] -= 1
 
-        if bbox_iou(car_box, key) > factor and stats[key] >= threshold_reiteration:
+        if bbox_iou(car_box, key) >= factor and stats[key] >= threshold_reiteration:
+            print(stats[key])
             parking[key] = stats[key]
 
         if bbox_iou(car_box, key) > factor and threshold_reiteration > stats[key] > 4:
+            print(stats[key])
             traffic[key] = stats[key]
 
-
     # stats = {key: stats[key] for key in stats if stats[key] < 0}
-    # print("Парковка => ", len(parking))
-    # print("Проезжая часть => ", len(traffic))
-    # print("Всего =>", len(stats))
+    print("Парковка => ", len(parking))
+    print("Проезжая часть => ", len(traffic))
+    print("Всего =>", len(stats))
     # print("---------------------------",stats)
-    stats[tuple(car_box)] = 1
+    stats[tuple(car_box)] = 5
     show(frame)
+    split()
 
 
 def accident_show(xy):
@@ -94,7 +94,6 @@ def show(frame):
         xy = tuple(map(int, key[:2]))
         cv.circle(gray_image, xy, 10, (0, 255, 0), -1)
 
-
     for key in traffic.keys():
         xy = tuple(map(int, key[:2]))
         cv.circle(gray_image, xy, 4, (0, 0, 255), -1)
@@ -108,8 +107,13 @@ def show(frame):
 
 
 def split():
-    traf = set(traffic)
-    prak = set(parking)
+    traffic_set = set(traffic)
+    parking_set = set(parking)
+    result = traffic_set & parking_set
+
+    if len(result) > 0:
+        print("RESULT SETS:")
+        print(result)
 
 
 def marker_rgb(option):
@@ -150,7 +154,7 @@ def bbox_iou(boxA, boxB, x1y1x2y2=False, GIoU=False, DIoU=False, CIoU=False, eps
         if CIoU or DIoU:  # Distance or Complete IoU https://arxiv.org/abs/1911.08287v1
             c2 = cw ** 2 + ch ** 2 + eps  # convex diagonal squared
             rho2 = ((b2_x1 + b2_x2 - b1_x1 - b1_x2) ** 2 + (
-                        b2_y1 + b2_y2 - b1_y1 - b1_y2) ** 2) / 4  # center distance squared
+                    b2_y1 + b2_y2 - b1_y1 - b1_y2) ** 2) / 4  # center distance squared
             if DIoU:
                 return iou - rho2 / c2  # DIoU
             elif CIoU:  # https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
@@ -167,7 +171,6 @@ def bbox_iou(boxA, boxB, x1y1x2y2=False, GIoU=False, DIoU=False, CIoU=False, eps
 
 if not cap.isOpened():
     print("Ошибка открытия файла или потока")
-
 
 frame_interval_ms = 10000  # берется кадр каждые 10 секунд
 current_pos_ms = 0
@@ -186,7 +189,3 @@ while cap.isOpened():
     current_pos_ms += frame_interval_ms
     if 0xFF == ord('q'):
         break
-
-
-
-

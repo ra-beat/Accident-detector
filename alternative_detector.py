@@ -26,33 +26,8 @@ limit_stats = 15  # лимит значений повторений для ав
 len_stats = 100  # ограничение
 stats = {}
 count = 0
+crash = {(1362.0, 1035.5, 144.0, 83.0), (1681.5, 744.0, 107.0, 58.0), (1815.0, 734.0, 104.0, 58.0), (691.5, 1045.5, 117.0, 67.0), (1680.5, 744.0, 107.0, 58.0), (1905.5, 724.5, 27.0, 39.0), (1682.0, 743.5, 106.0, 59.0), (1906.0, 724.0, 26.0, 40.0), (693.0, 1044.0, 118.0, 70.0), (1815.0, 735.0, 104.0, 60.0), (1681.5, 743.0, 107.0, 58.0), (692.5, 1044.0, 119.0, 70.0)}
 
-
-def statistic(results):
-    global count
-    for result in results:
-        car = tuple(map(int, result))
-
-        if stats.get(car) is None:  # проверяет есть ли ключ в массиве, если нет возвращает None
-            stats[car] = 1
-
-        if stats[car] != limit_stats:  # если значение не равно лимиту прибавляет 1
-            stats[car] += 1
-
-        if stats[car] == limit_stats:
-            print(car)
-
-
-
-    count += 1
-    print("Count=", count)
-
-
-def detector_car(frame):
-    results = model(frame, conf=0.22)
-    results = results[0].numpy()
-    results = results.boxes[results.boxes.cls == 2].xywh[:, :2]
-    statistic(results)
 
 
 if not cap.isOpened():
@@ -62,7 +37,14 @@ while cap.isOpened():
     ret, frame = cap.read()
 
     if ret:
-        detector_car(frame)
-        last_time = cv.getTickCount()
+        for key in crash:
+            xy = tuple(map(int, key[:2]))
+            cv.circle(frame, xy, 20, (0, 0, 255), -1)
+            last_time = cv.getTickCount()
+            cv.namedWindow('Frame', cv.WINDOW_NORMAL)
+            cv.imshow('Frame', frame)
+            if cv.waitKey(25) & 0xFF == ord('q'):
+                cap.release()
+                cv.destroyAllWindows()
     else:
         break

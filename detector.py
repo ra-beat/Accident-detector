@@ -1,9 +1,12 @@
 from ultralytics import YOLO
 import cv2 as cv
 import numpy as np
-import json
+import torch
 import os
+import time
 from dotenv import load_dotenv
+import math
+from collections import OrderedDict
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 if os.path.exists(dotenv_path):
@@ -14,171 +17,171 @@ stats_json = os.getenv("STATS_JSON")
 neighbour_parking_json = os.getenv("PARKING_JSON")
 neighbour_traffic_json = os.getenv("TRAFFIC_JSON")
 
-cap = cv.VideoCapture(stream, cv.CAP_FFMPEG)
+# cap = cv.VideoCapture(stream, cv.CAP_FFMPEG)
+cap = cv.VideoCapture('crash.mp4')
+cap.set(cv.CAP_PROP_POS_MSEC, 10000)  # берется кадр каждые 10 секунд
+
 model = YOLO("yolov8x.pt")
 
 stats = {}
 crash = {}
-crash_json = {}
-
-parking_json = {}
-neighbour_parking = {}
-
-traffic_json = {}
-neighbour_traffic = {}
-
-all_stat_json = {}
-
-
+parking = {}
+traffic = {}
 interval_video = 4
 
-threshold_coordinates = 14  # Погрешность по координатам
-threshold_reiteration = 10  # Пороговое значение повторений, возможно использовать для определения соседей
-
-frame_count = 0
-last_time = 10
+threshold_coordinates = 10  # Погрешность по координатам
+threshold_reiteration = 50  # Пороговое значение повторений, возможно использовать для определения соседей
+threshold_max = 10  # Максимальное возможное количество повторений
 
 
 def detector_cars(frame):
     results = model(frame, conf=0.22)  # Распознавание машины.
     results = results[0].numpy()
-    cars_results = results.boxes[results.boxes.cls == 1].xywh[:, :2]  # Координаты, для кругов
-    return cars_results
+    box = results.boxes[results.boxes.cls == 2].xywh[:, :4]  # размеры объектов
+    return tuple(box.tolist())  #
 
 
-def statistics(car):
-    car = tuple(map(int, car))
+
+
+def statistics(car_box, frame):
+    # global stats
+
+    factor = 0.7
+
     for key in stats.keys():
-        all_stat_json[str(key)] = int(stats[key])
-
-        if fault_coordinates(key, car):
+        if bbox_iou(car_box, key) > factor:
             stats[key] += 1
-            crash[key] = stats[key]
 
-        # Вот здесь не происходит проверка на погрешность от этого появляются "битые данные"
-        if neighbour_parking_detect(key, car):
+        # elif stats[key] > 5:
+        #     stats[key] -= 1
 
-            parking_json[str(key)] = int(stats[key])
-            neighbour_parking[key] = stats[key]
+        if bbox_iou(car_box, key) > factor and stats[key] >= threshold_reiteration:
+            parking[key] = stats[key]
 
-        if neighbour_traffic_detect(key, car):
-
-            traffic_json[str(key)] = int(stats[key])
-            neighbour_traffic[key] = stats[key]
-
-    print("Парковка => ", len(neighbour_parking))
-    print("Проезжая часть => ", len(neighbour_traffic))
-    print("Всего =>", len(stats))
-    key = tuple(car)
-    stats[key] = 1
-    return crash
+        if bbox_iou(car_box, key) > factor and threshold_reiteration > stats[key] > 4:
+            traffic[key] = stats[key]
 
 
-def crash_show(crashs, frame):
-    if len(crashs) != 0:
-        for crash in crashs:
+    # stats = {key: stats[key] for key in stats if stats[key] < 0}
+    # print("Парковка => ", len(parking))
+    # print("Проезжая часть => ", len(traffic))
+    # print("Всего =>", len(stats))
+    # print("---------------------------",stats)
+    stats[tuple(car_box)] = 1
+    show(frame)
 
-            xy = tuple(int(x) for x in crash)
-            option = crashs[crash]
-            rgb = marker_rgb(option)
 
-            cv.circle(frame, xy, option, rgb, -1)
-            if cv.waitKey(25) & 0xFF == ord('q'):
-                break
-        cv.imshow('Frame', frame)
-        if cv.waitKey(25) & 0xFF == ord('q'):
-            cap.release()
-            cv.destroyAllWindows()
+def accident_show(xy):
+    width, height = 1920, 1080
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+    print("--------------------------")
+
+    cv.circle(img, xy, 20, (255, 255, 255), -1)
+    cv.imshow('Frame', img)
+    if cv.waitKey(25) & 0xFF == ord('q'):
+        cap.release()
+        cv.destroyAllWindows()
+
+
+def show(frame):
+    width, height = 1920, 1080
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+    gray_image = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
+    # for key in stats.keys():
+    #     print(key, '=>', stats[key])
+
+    for key in parking.keys():
+        xy = tuple(map(int, key[:2]))
+        cv.circle(gray_image, xy, 10, (0, 255, 0), -1)
+
+
+    for key in traffic.keys():
+        xy = tuple(map(int, key[:2]))
+        cv.circle(gray_image, xy, 4, (0, 0, 255), -1)
+
+    cv.namedWindow('Frame', cv.WINDOW_NORMAL)
+    cv.imshow('Frame', gray_image)
+    if cv.waitKey(25) & 0xFF == ord('q'):
+        cap.release()
+        cv.destroyAllWindows()
+        return True
+
+
+def split():
+    traf = set(traffic)
+    prak = set(parking)
 
 
 def marker_rgb(option):
     if option <= threshold_reiteration:
-        return (0, 255, 0) # зеленый когда меньше или равен
+        return (0, 255, 0)  # зеленый когда меньше или равен
     if option > threshold_reiteration:
         return (255, 0, 0)  # Красный когда вес больше порогового значения
 
 
-def stats_write(stats_list):
-    print('Write Stats')
-    with open(stats_json, 'w') as file:
-        json_stat = json.dumps(stats_list)
-        file.write(json_stat)
-        return True
+def bbox_iou(boxA, boxB, x1y1x2y2=False, GIoU=False, DIoU=False, CIoU=False, eps=1e-7):
+    # Returns the IoU of box1 to box2. box1 is 4, box2 is nx4
+    box1 = torch.FloatTensor(boxA)
+    box2 = torch.FloatTensor(boxB)
 
+    # Get the coordinates of bounding boxes
+    if x1y1x2y2:  # x1, y1, x2, y2 = box1
+        b1_x1, b1_y1, b1_x2, b1_y2 = box1[0], box1[1], box1[2], box1[3]
+        b2_x1, b2_y1, b2_x2, b2_y2 = box2[0], box2[1], box2[2], box2[3]
+    else:  # transform from xywh to xyxy
+        b1_x1, b1_x2 = box1[0] - box1[2] / 2, box1[0] + box1[2] / 2
+        b1_y1, b1_y2 = box1[1] - box1[3] / 2, box1[1] + box1[3] / 2
+        b2_x1, b2_x2 = box2[0] - box2[2] / 2, box2[0] + box2[2] / 2
+        b2_y1, b2_y2 = box2[1] - box2[3] / 2, box2[1] + box2[3] / 2
 
-def neighbour_parking_write(neighbour_list):
-    print("Write neighbour parking")
-    with open(neighbour_parking_json, 'w') as file:
-        json_neighbour = json.dumps(neighbour_list)
-        file.write(json_neighbour)
-        return True
+    # Intersection area
+    inter = (torch.min(b1_x2, b2_x2) - torch.max(b1_x1, b2_x1)).clamp(0) * \
+            (torch.min(b1_y2, b2_y2) - torch.max(b1_y1, b2_y1)).clamp(0)
 
+    # Union Area
+    w1, h1 = b1_x2 - b1_x1, b1_y2 - b1_y1 + eps
+    w2, h2 = b2_x2 - b2_x1, b2_y2 - b2_y1 + eps
+    union = w1 * h1 + w2 * h2 - inter + eps
 
-def neighbour_traffic_write(neighbour_list):
-    print("Write neighbour traffic")
-    with open(neighbour_traffic_json, 'w') as file:
-        json_neighbour = json.dumps(neighbour_list)
-        file.write(json_neighbour)
-        return True
-
-
-def fault_coordinates(key, car):
-    if np.abs(np.array(key) - car).max() <= threshold_coordinates:
-        return True
+    iou = inter / union
+    if GIoU or DIoU or CIoU:
+        cw = torch.max(b1_x2, b2_x2) - torch.min(b1_x1, b2_x1)  # convex (smallest enclosing box) width
+        ch = torch.max(b1_y2, b2_y2) - torch.min(b1_y1, b2_y1)  # convex height
+        if CIoU or DIoU:  # Distance or Complete IoU https://arxiv.org/abs/1911.08287v1
+            c2 = cw ** 2 + ch ** 2 + eps  # convex diagonal squared
+            rho2 = ((b2_x1 + b2_x2 - b1_x1 - b1_x2) ** 2 + (
+                        b2_y1 + b2_y2 - b1_y1 - b1_y2) ** 2) / 4  # center distance squared
+            if DIoU:
+                return iou - rho2 / c2  # DIoU
+            elif CIoU:  # https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
+                v = (4 / math.pi ** 2) * torch.pow(torch.atan(w2 / h2) - torch.atan(w1 / h1), 2)
+                with torch.no_grad():
+                    alpha = v / (v - iou + (1 + eps))
+                return iou - (rho2 / c2 + v * alpha)  # CIoU
+        else:  # GIoU https://arxiv.org/pdf/1902.09630.pdf
+            c_area = cw * ch + eps  # convex area
+            return iou - (c_area - union) / c_area  # GIoU
     else:
-        return False
-
-
-def reiteration_coordinates(key):
-    if key > threshold_reiteration:
-        return True
-    else:
-        return False
-
-
-def neighbour_parking_detect(key, car):
-    if stats[key] > threshold_reiteration and np.abs(np.array(key) - car).max() <= stats[key]:
-        print("*")
-        return True
-    else:
-        return False
-
-
-def neighbour_traffic_detect(key, car):
-    if stats[key] < threshold_reiteration and np.abs(np.array(key) - car).max() <= threshold_coordinates:
-        print("+")
-        return True
-    else:
-        return False
+        return float(iou)  # IoU
 
 
 if not cap.isOpened():
     print("Ошибка открытия файла или потока")
 
 while cap.isOpened():
+
     ret, frame = cap.read()
     if ret:
-        if (cv.getTickCount() - last_time) / cv.getTickFrequency() >= interval_video:
-            cars_results = detector_cars(frame)
+        cars_boxes = detector_cars(frame)
+        for car_box in cars_boxes:
+            statistics(car_box, frame)
 
-            for cars_result in cars_results:
-                crash = statistics(cars_result)
-                crash_show(crash, frame)
+            if 0xFF == ord('q'):
+                break
 
-                if cv.waitKey(25) & 0xFF == ord('q'):
-                    break
-            cv.imshow('Frame', frame)
-            last_time = cv.getTickCount()
-
-        frame_count += 1
-        if cv.waitKey(25) & 0xFF == ord('q'):
-            if stats_write(all_stat_json):
-                if neighbour_parking_write(parking_json):
-                    if neighbour_traffic_write(traffic_json):
-                        break
-
-    else:
+    if 0xFF == ord('q'):
         break
 
-cap.release()
-cv.destroyAllWindows()
+
+
+

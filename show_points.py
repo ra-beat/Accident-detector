@@ -34,20 +34,20 @@ res = setP & setT
 res = res & setP
 
 print(res)
-# for key in traffic.keys():
-#     weigh = int(traffic[key])
-#     coor = map(int, eval(key))
-#     cv.circle(img, tuple(coor), weigh, (0, 255, 0), -1)
-#
+for key in traffic.keys():
+    weigh = int(traffic[key])
+    coor = map(int, eval(key))
+    cv.circle(img, tuple(coor), weigh, (0, 255, 0), -1)
+
 # for key in parking.keys():
 #     weigh = int(parking[key])
 #     coor = map(int, eval(key))
 #     cv.circle(img, tuple(coor), weigh,(255, 0, 0), -1)
+
 #
-#
-for key in res:
-    coor = map(int, eval(key))
-    cv.circle(img, tuple(coor), 10, (255, 255, 255), -1)
+# for key in res:
+#     coor = map(int, eval(key))
+#     cv.circle(img, tuple(coor), 10, (255, 255, 255), -1)
 
 
 cv.imshow('image', img)

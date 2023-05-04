@@ -42,7 +42,8 @@ last_time = 10
 def detector_cars(frame):
     results = model(frame, conf=0.22)  # Распознавание машины.
     results = results[0].numpy()
-    cars_results = results.boxes[results.boxes.cls == 1].xywh[:, :2]  # Координаты, для кругов
+    cars_results = results.boxes[results.boxes.cls == 2].xywh[:, :2]  # Координаты, для кругов
+    print(cars_results)
     return cars_results
 
 

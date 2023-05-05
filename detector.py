@@ -6,7 +6,6 @@ import os
 import time
 from dotenv import load_dotenv
 import math
-from collections import OrderedDict
 
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 if os.path.exists(dotenv_path):
@@ -23,50 +22,52 @@ cap = cv.VideoCapture('crash.mp4')
 model = YOLO("yolov8x.pt")
 
 stats = {}
-crash = {}
 parking = {}
 traffic = {}
-interval_video = 4
 
 threshold_coordinates = 10  # Погрешность по координатам
-threshold_reiteration = 10  # Пороговое значение повторений, возможно использовать для определения соседей
+threshold_reiteration = 6  # Пороговое значение повторений
 threshold_max = 10  # Максимальное возможное количество повторений
+
+max_reiteration = 15  # Максимальное количество значений повторений
+
+count = 0
 
 
 def detector_cars(frame):
+    global count
     results = model(frame, conf=0.22)  # Распознавание машины.
     results = results[0].numpy()
     box = results.boxes[results.boxes.cls == 2].xywh[:, :4]  # размеры объектов
+    count += 1
+    print("------------------------ Итерация ", count, " ------------------------")
     return tuple(box.tolist())  #
 
 
 def statistics(car_box, frame):
-    # global stats
+    global stats
 
-    factor = 0.9
+    filter = {}
+    factor = 0.8
 
     for key in stats.keys():
         if bbox_iou(car_box, key) > factor:
-            print("++++++++++++++")
-            stats[key] += 1
+            if stats[key] < max_reiteration:
+                stats[key] += 1
 
         else:
-            stats[key] -= 1
+            filter[tuple(car_box)] = stats[key]
 
-        if bbox_iou(car_box, key) >= factor and stats[key] >= threshold_reiteration:
-            print(stats[key])
+        if bbox_iou(car_box, key) > factor and stats[key] >= threshold_reiteration:
             parking[key] = stats[key]
 
-        if bbox_iou(car_box, key) > factor and threshold_reiteration > stats[key] > 4:
-            print(stats[key])
+        else:
             traffic[key] = stats[key]
 
-    # stats = {key: stats[key] for key in stats if stats[key] < 0}
-    print("Парковка => ", len(parking))
-    print("Проезжая часть => ", len(traffic))
-    print("Всего =>", len(stats))
-    # print("---------------------------",stats)
-    stats[tuple(car_box)] = 5
+    for key in filter.keys():
+        stats.pop(key, None)
+
+    stats[tuple(car_box)] = 1
     show(frame)
     split()
 
@@ -86,20 +87,17 @@ def accident_show(xy):
 def show(frame):
     width, height = 1920, 1080
     img = np.zeros((height, width, 3), dtype=np.uint8)
-    gray_image = cv.cvtColor(frame, cv.COLOR_BGR2GRAY)
-    # for key in stats.keys():
-    #     print(key, '=>', stats[key])
 
     for key in parking.keys():
         xy = tuple(map(int, key[:2]))
-        cv.circle(gray_image, xy, 10, (0, 255, 0), -1)
+        cv.circle(frame, xy, 10, (0, 255, 0), -1)
 
     for key in traffic.keys():
         xy = tuple(map(int, key[:2]))
-        cv.circle(gray_image, xy, 4, (0, 0, 255), -1)
+        cv.circle(frame, xy, 4, (0, 0, 255), -1)
 
     cv.namedWindow('Frame', cv.WINDOW_NORMAL)
-    cv.imshow('Frame', gray_image)
+    cv.imshow('Frame', frame)
     if cv.waitKey(25) & 0xFF == ord('q'):
         cap.release()
         cv.destroyAllWindows()
@@ -107,20 +105,20 @@ def show(frame):
 
 
 def split():
-    traffic_set = set(traffic)
-    parking_set = set(parking)
-    result = traffic_set & parking_set
+    global count
+    filter_stats = {}
+    for key, value in stats.items():  # проходим по всем парам ключ-значение
+        if value >= threshold_reiteration:  # если значение равно максимальному
+            filter_stats[key] = value  # добавляем в новый словарь
 
-    if len(result) > 0:
-        print("RESULT SETS:")
-        print(result)
+    if count > threshold_reiteration:
 
+        filter_traffic = set(filter_stats) - set(parking)
 
-def marker_rgb(option):
-    if option <= threshold_reiteration:
-        return (0, 255, 0)  # зеленый когда меньше или равен
-    if option > threshold_reiteration:
-        return (255, 0, 0)  # Красный когда вес больше порогового значения
+        if len(filter_traffic) > 0:
+            print("+++++++++++++++++++++++++ НАЙДЕН итерация: ", count, "+++++++++++++++++++++++++")
+            print(filter_traffic)
+            time.sleep(600)
 
 
 def bbox_iou(boxA, boxB, x1y1x2y2=False, GIoU=False, DIoU=False, CIoU=False, eps=1e-7):
@@ -186,6 +184,10 @@ while cap.isOpened():
 
             if 0xFF == ord('q'):
                 break
+
+        print("Парковка => ", len(parking))
+        print("Проезжая часть => ", len(traffic))
+        print("Всего =>", len(stats))
     current_pos_ms += frame_interval_ms
     if 0xFF == ord('q'):
         break

@@ -1,34 +1,184 @@
 from ultralytics import YOLO
 import cv2 as cv
 import numpy as np
-import json
-import os
-from dotenv import load_dotenv
-
-# dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
-# if os.path.exists(dotenv_path):
-#     load_dotenv(dotenv_path)
-#
-# stream = os.getenv("STREAM")
-# stats_json = os.getenv("STATS_JSON")
-# neighbour_parking_json = os.getenv("PARKING_JSON")
-# neighbour_traffic_json = os.getenv("TRAFFIC_JSON")
-#
-# # cap = cv.VideoCapture(stream, cv.CAP_FFMPEG)
-# cap = cv.VideoCapture('crash.mp4')
-# cap.set(cv.CAP_PROP_POS_MSEC, 10000)  # берется кадр каждые 10 секунд
-# model = YOLO("yolov8x.pt")
-#
-# interval_video = 1
-# last_time = 0
-#
-# limit_stats = 15  # лимит значений повторений для авто
-# len_stats = 100  # ограничение
-# stats = {}
-# count = 0
 import torch
+import os
+import time
+from dotenv import load_dotenv
 import math
-crash = {(1681.5, 744.0, 107.0, 58.0), (1815.5, 734.5, 103.0, 57.0), (1681.0, 743.5, 108.0, 55.0), (692.0, 1044.0, 118.0, 70.0), (1903.5, 1056.0, 31.0, 46.0), (692.5, 1045.0, 117.0, 68.0), (692.0, 1044.0, 120.0, 70.0), (691.5, 1044.5, 115.0, 69.0), (692.5, 1045.0, 119.0, 68.0), (1401.0, 802.5, 124.0, 69.0), (1401.0, 803.0, 122.0, 68.0), (904.0, 964.0, 124.0, 80.0), (1904.5, 1057.5, 29.0, 43.0), (904.0, 964.0, 126.0, 80.0), (1682.5, 743.5, 105.0, 57.0), (1905.0, 1057.5, 28.0, 43.0), (1682.0, 743.5, 106.0, 59.0), (903.0, 963.5, 126.0, 81.0), (1905.0, 1056.0, 28.0, 46.0), (691.0, 1044.0, 116.0, 70.0), (903.5, 964.0, 125.0, 80.0), (1815.5, 734.0, 103.0, 58.0), (1400.5, 802.5, 121.0, 69.0), (1680.5, 743.5, 109.0, 55.0), (1681.5, 743.0, 105.0, 56.0), (1906.0, 725.0, 26.0, 38.0), (1904.0, 1057.0, 30.0, 44.0), (1680.5, 742.5, 107.0, 55.0), (1361.5, 1036.5, 143.0, 81.0), (1400.0, 803.0, 122.0, 68.0), (903.0, 964.0, 124.0, 80.0), (692.5, 1044.0, 119.0, 70.0), (1362.0, 1035.5, 144.0, 83.0), (1906.0, 724.0, 26.0, 38.0), (904.0, 962.5, 126.0, 83.0), (1815.0, 734.0, 104.0, 58.0), (1815.0, 734.5, 104.0, 59.0), (1904.5, 1056.5, 29.0, 45.0), (1815.5, 735.0, 105.0, 58.0), (1400.5, 802.5, 123.0, 69.0), (904.0, 964.0, 124.0, 82.0), (903.5, 963.5, 123.0, 81.0), (1360.5, 1036.0, 143.0, 82.0), (903.5, 963.5, 125.0, 81.0), (904.0, 963.5, 124.0, 81.0), (1906.0, 726.0, 26.0, 36.0), (1906.0, 725.5, 26.0, 37.0), (1681.0, 744.0, 108.0, 58.0), (1400.0, 802.5, 120.0, 69.0), (1904.0, 1056.0, 30.0, 46.0), (692.5, 1045.5, 119.0, 67.0), (1904.5, 1057.0, 29.0, 44.0), (1814.5, 734.5, 103.0, 57.0), (1680.0, 744.0, 108.0, 56.0), (691.5, 1045.5, 117.0, 67.0), (1680.0, 744.0, 110.0, 56.0), (1903.5, 1056.5, 31.0, 45.0), (1905.5, 724.5, 27.0, 39.0), (692.0, 1044.5, 120.0, 69.0), (1906.0, 724.0, 26.0, 40.0), (1680.5, 744.0, 107.0, 58.0), (692.0, 1045.0, 118.0, 68.0), (1815.5, 735.0, 103.0, 58.0), (1399.0, 803.0, 120.0, 68.0), (693.0, 1044.0, 118.0, 70.0), (1361.0, 1035.0, 144.0, 84.0), (1815.0, 735.0, 104.0, 60.0), (1361.5, 1035.5, 143.0, 83.0), (1361.5, 1035.0, 143.0, 84.0), (1681.5, 743.0, 107.0, 58.0), (1816.0, 734.5, 104.0, 57.0), (1401.0, 802.5, 122.0, 69.0), (903.5, 963.5, 125.0, 83.0)}
+from multiprocessing import Pool
+
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.exists(dotenv_path):
+    load_dotenv(dotenv_path)
+
+
+model = YOLO("yolov8x.pt")
+
+stats = {}
+parking = {}
+traffic = {}
+
+threshold_coordinates = 10  # Погрешность по координатам
+threshold_parking = 6  # Пороговое значение повторений
+threshold_max = 10  # Максимальное возможное количество повторений
+threshold_min = -1
+max_reiteration = 15  # Максимальное количество значений повторений
+
+count = 0
+factor = 0.8
+iterator = threshold_parking
+
+# def statistics(car_box, frame):
+#     global stats, traffic, parking, iterator
+#     car_box = tuple(car_box)
+#
+#     if not check_key(car_box):
+#         stats[car_box] = 0
+#     else:
+#         key = get_key(car_box)
+#         if stats[key] < threshold_max:
+#             stats[key] += 1
+#
+#     if iterator == 4:
+#         stats = {key:val for key,val in stats.items() if val == 0}
+#         iterator = 0
+#     iterator += 1
+#
+#     for key in stats.keys():
+#         if stats[key] < threshold_parking:
+#             traffic[key] = stats[key]
+#
+#         else:
+#             parking[key] = stats[key]
+#
+#
+#     show(frame)
+#     # split()
+
+def statistics(car_box, frame):
+    global stats
+
+    filter = {}
+    factor = 0.8
+
+    for key in stats.keys():
+        if bbox_iou(car_box, key) > factor:
+            if stats[key] < max_reiteration:
+                stats[key] += 1
+        else:
+            filter[tuple(car_box)] = stats[key]
+
+        if bbox_iou(car_box, key) > factor and stats[key] >= threshold_parking:
+            parking[key] = stats[key]
+
+        elif threshold_parking > stats[key] > 3:
+            traffic[key] = stats[key]
+
+    for key in filter.keys():
+        stats.pop(key, None)
+
+    stats[tuple(car_box)] = 0
+    # show(frame)
+
+
+def check_key(car_box):
+    if len(stats) > 0:
+        for key in stats.keys():
+            if bbox_iou(key, car_box) > 0.7:
+                return True
+            else:
+                return False
+    return False
+
+def get_key(car_box):
+    if len(stats) > 0:
+        for key in stats.keys():
+            if bbox_iou(key, car_box) > 0.7:
+                return key
+
+
+# def show(frame):
+#     width, height = 1920, 1080
+#     img = np.zeros((height, width, 3), dtype=np.uint8)
+#
+#     for key in parking.keys():
+#         xy = tuple(map(int, key[:2]))
+#         cv.circle(frame, xy, 10, (0, 255, 0), -1)
+#
+#     for key in traffic.keys():
+#         xy = tuple(map(int, key[:2]))
+#         cv.circle(frame, xy, 4, (0, 0, 255), -1)
+#
+#     cv.namedWindow('Frame', cv.WINDOW_NORMAL)
+#     cv.imshow('Frame', frame)
+#     if cv.waitKey(25) & 0xFF == ord('q'):
+#         cv.destroyAllWindows()
+#         return True
+# def stat_filter(stats, threshold_parking):
+#     for key in stats.keys():
+#         if stats[key] > threshold_parking:
+#             yield (key, stats[key])
+
+
+# def process_traffic(key):
+#     res_temp_set = set()
+#     res_park_set = set()
+#     for park in parking:
+#         if bbox_iou(park, key) > 0.7:
+#             res_temp_set.add(key)
+#         else:
+#             res_park_set.add(key)
+#     return (res_temp_set, res_park_set)
+# def split():
+#     global count
+#     filter_stats = {}
+#     filter_parking = {}
+#     for key, value in stats.items():  # проходим по всем парам ключ-значение
+#         if value < threshold_parking:  # если значение равно максимальному
+#             filter_stats[key] = value  # добавляем в новый словарь
+#         elif value == threshold_parking:
+#             filter_parking[key] = value
+#
+#     # if count > threshold_parking:
+#     if count == 42:
+#         print("-----------------------------------------------------------------------------")
+#         print("traffic")
+#         print("-----------------------------------------------------------------------------")
+#         print(traffic)
+#         print("-----------------------------------------------------------------------------")
+#         print("filter_parking")
+#         print("-----------------------------------------------------------------------------")
+#         print(filter_parking)
+#
+#         filter_traffic = set(filter_stats) | set(parking)
+#         res_temp = set()
+#         res_park = set()
+#         print("*******************************************************************************")
+#         print("*******************************************************************************")
+#         print("Filter stat", len(filter_stats))
+#         print("Parking", len(parking))
+#         print(len(res_park))
+#         print(len(res_temp))
+#         print("*******************************************************************************")
+#         print("*******************************************************************************")
+#
+#         for key in filter_traffic:
+#             for park in parking:
+#                 if bbox_iou(park, key) > 0.7:
+#                     res_temp.add(key)
+#                 else:
+#                     res_park.add(key)
+#
+#         res = res_park - res_temp
+#
+#         # if len(res) > 0:
+#         #     print("+++++++++++++++++++++++++ НАЙДЕН итерация: ", count, "+++++++++++++++++++++++++")
+#         #     print(filter_traffic)
+#         #     time.sleep(600)
+#         # time.sleep(600)
+
+
 def bbox_iou(boxA, boxB, x1y1x2y2=False, GIoU=False, DIoU=False, CIoU=False, eps=1e-7):
     # Returns the IoU of box1 to box2. box1 is 4, box2 is nx4
     box1 = torch.FloatTensor(boxA)
@@ -74,25 +224,49 @@ def bbox_iou(boxA, boxB, x1y1x2y2=False, GIoU=False, DIoU=False, CIoU=False, eps
     else:
         return float(iou)  # IoU
 
+def load_images_from_folder(folder):
+    images = []
+
+    for name in range(0,len(os.listdir(folder))):
+        filename = str(name) + ".jpg"
+        img = cv.imread(os.path.join(folder,filename))
+        if img is not None:
+            images.append(img)
+    return images
+
+def detector_cars(frame):
+    global count
+    results = model(frame, conf=0.4)  # Распознавание машины.
+    results = results[0].numpy()
+    box = results.boxes[results.boxes.cls == 2].xywh[:, :4]  # размеры объектов
+    # split()
+    count += 1
+    print("------------------------ Итерация ", count, " ------------------------")
+    return tuple(box.tolist())  #
 
 
-print(bbox_iou((1681.5, 744.0, 107.0, 58.0), (1681.0, 743.5, 108.0, 55.0)))
-#
-# if not cap.isOpened():
-#     print("Ошибка открытия файла или потока")
-#
-# while cap.isOpened():
-#     ret, frame = cap.read()
-#
-#     if ret:
-#         for key in crash:
-#             xy = tuple(map(int, key[:2]))
-#             cv.circle(frame, xy, 20, (0, 0, 255), -1)
-#             last_time = cv.getTickCount()
-#             cv.namedWindow('Frame', cv.WINDOW_NORMAL)
-#             cv.imshow('Frame', frame)
-#             if cv.waitKey(25) & 0xFF == ord('q'):
-#                 cap.release()
-#                 cv.destroyAllWindows()
-#     else:
-#         break
+start_time = time.time()
+
+
+def make_images():
+    images = load_images_from_folder("test/")
+    for frame in images:
+        iteration_start_time = time.time()
+
+        if frame is not None:
+            cars_boxes = detector_cars(frame)
+            for car_box in cars_boxes:
+                statistics(car_box, frame)
+
+            print("Парковка => ", len(parking))
+            print("Проезжая часть => ", len(traffic))
+            print("Всего =>", len(stats))
+
+        if 0xFF == ord('q'):
+            break
+        iteration_end_time = time.time()
+        iteration_time = iteration_end_time - iteration_start_time
+        print("Время выполнения итерации: ", iteration_time)
+
+
+make_images()

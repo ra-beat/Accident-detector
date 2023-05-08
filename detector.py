@@ -41,6 +41,7 @@ def detector_cars(frame):
     box = results.boxes[results.boxes.cls == 2].xywh[:, :4]  # размеры объектов
     count += 1
     print("------------------------ Итерация ", count, " ------------------------")
+    split()
     return tuple(box.tolist())  #
 
 
@@ -61,15 +62,15 @@ def statistics(car_box, frame):
         if bbox_iou(car_box, key) > factor and stats[key] >= threshold_reiteration:
             parking[key] = stats[key]
 
-        else:
+        elif stats[key] < threshold_reiteration:
             traffic[key] = stats[key]
 
     for key in filter.keys():
         stats.pop(key, None)
 
-    stats[tuple(car_box)] = 1
+    stats[tuple(car_box)] = 0
     show(frame)
-    split()
+
 
 
 def accident_show(xy):
@@ -108,14 +109,26 @@ def split():
     global count
     filter_stats = {}
     for key, value in stats.items():  # проходим по всем парам ключ-значение
-        if value >= threshold_reiteration:  # если значение равно максимальному
+        if value > threshold_reiteration:  # если значение равно максимальному
             filter_stats[key] = value  # добавляем в новый словарь
 
     if count > threshold_reiteration:
 
-        filter_traffic = set(filter_stats) - set(parking)
+        filter_traffic = set(filter_stats) | set(parking)
 
-        if len(filter_traffic) > 0:
+        res_temp = set()
+        res_park = set()
+
+        for key in filter_traffic:
+            for park in parking:
+                if bbox_iou(park, key) > 0.7:
+                    res_temp.add(key)
+                else:
+                    res_park.add(key)
+
+        res = res_park - res_temp
+
+        if len(res) > 0:
             print("+++++++++++++++++++++++++ НАЙДЕН итерация: ", count, "+++++++++++++++++++++++++")
             print(filter_traffic)
             time.sleep(600)

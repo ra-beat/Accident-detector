@@ -14,170 +14,109 @@ if os.path.exists(dotenv_path):
 
 
 model = YOLO("yolov8x.pt")
-
-stats = {}
-parking = {}
-traffic = {}
-
-threshold_coordinates = 10  # Погрешность по координатам
-threshold_parking = 6  # Пороговое значение повторений
-threshold_max = 10  # Максимальное возможное количество повторений
-threshold_min = -1
-max_reiteration = 15  # Максимальное количество значений повторений
-
 count = 0
-factor = 0.8
-iterator = threshold_parking
+buffer_size = 2
+buffer_index = 0
+tolerance = 0.5 # погрешность
 
-# def statistics(car_box, frame):
-#     global stats, traffic, parking, iterator
-#     car_box = tuple(car_box)
-#
-#     if not check_key(car_box):
-#         stats[car_box] = 0
-#     else:
-#         key = get_key(car_box)
-#         if stats[key] < threshold_max:
-#             stats[key] += 1
-#
-#     if iterator == 4:
-#         stats = {key:val for key,val in stats.items() if val == 0}
-#         iterator = 0
-#     iterator += 1
-#
-#     for key in stats.keys():
-#         if stats[key] < threshold_parking:
-#             traffic[key] = stats[key]
-#
-#         else:
-#             parking[key] = stats[key]
-#
-#
-#     show(frame)
-#     # split()
+stats_buffer = np.empty((buffer_size,), dtype=np.ndarray)
+parking_buffer = {}
 
-def statistics(car_box, frame):
-    global stats
+def find_parking():
+    global count, parking_buffer
+    stats_array = np.array(stats_buffer)
+    stats_array = stats_array[:-1]  # Все элементы кроме последнего
+    last_stat = stats_array[-1]  # последний
+    crashes = []
 
-    filter = {}
-    factor = 0.8
-
-    for key in stats.keys():
-        if bbox_iou(car_box, key) > factor:
-            if stats[key] < max_reiteration:
-                stats[key] += 1
-        else:
-            filter[tuple(car_box)] = stats[key]
-
-        if bbox_iou(car_box, key) > factor and stats[key] >= threshold_parking:
-            parking[key] = stats[key]
-
-        elif threshold_parking > stats[key] > 3:
-            traffic[key] = stats[key]
-
-    for key in filter.keys():
-        stats.pop(key, None)
-
-    stats[tuple(car_box)] = 0
-    # show(frame)
-
-
-def check_key(car_box):
-    if len(stats) > 0:
-        for key in stats.keys():
-            if bbox_iou(key, car_box) > 0.7:
-                return True
+    for stat in stats_array:
+        for stat_row in stat:  # первый
+            if len(parking_buffer) == 0:
+                parking_buffer[tuple(stat_row)] = 0
             else:
-                return False
-    return False
+                for last_row in last_stat:  # второй
+                    iou = bbox_iou(stat_row, last_row)
+                    if iou > 0.8:
+                        stat_row = tuple(stat_row)
+                        if stat_row not in parking_buffer:
+                            parking_buffer[stat_row] = 0
+                        else:
+                            parking_buffer[stat_row] += 1
+                    else:
+                        stat_row = tuple(stat_row)
+                        if stat_row in parking_buffer:
+                            parking_buffer[stat_row] -= 1
 
-def get_key(car_box):
-    if len(stats) > 0:
-        for key in stats.keys():
-            if bbox_iou(key, car_box) > 0.7:
-                return key
+    for key in list(parking_buffer.keys()):  # используем list() для создания копии ключей словаря, чтобы избежать RuntimeError
+        if parking_buffer[key] <= 0:
+            del parking_buffer[key]
+
+    if len(parking_buffer):
+        parking_buffer = {k: v for k, v in parking_buffer.items() if v is not None and v < 0}
+        print(parking_buffer)
+
+        time.sleep(600)
+        mean_value = sum(parking_buffer.values()) / len(parking_buffer)
+        max_value = max(parking_buffer.values())
+        print("----------******************")
+        print("Mean", mean_value)
+        print("----------******************")
+        traffic = {k: v for k, v in parking_buffer.items() if v is not None and 0 < v < buffer_size}
+        parking = {k: v for k, v in parking_buffer.items() if v is not None and v >= buffer_size}
+        seven = {k: v for k, v in parking_buffer.items() if v is not None and v == buffer_size}
+
+        # traffic = set(parking) - set(traffic)
+
+        # crash = find_nearest_point(traffic, set(parking.keys()))
+        parking = find_nearest_point(set(parking.keys()), traffic)
+        crash = set(traffic) - set(parking)
+        crashes.append(crash)
+
+        if len(crash) > 0:
+            # if set(parking.keys()) < set(crash):
+                print("=================== Найдено! =================== ")
+                print(crash)
+                show(crash, parking, traffic, seven)
+                print(parking)
+                print("***************************************************")
+                print(traffic)
+                cv.waitKey(0)
 
 
-# def show(frame):
-#     width, height = 1920, 1080
-#     img = np.zeros((height, width, 3), dtype=np.uint8)
-#
-#     for key in parking.keys():
-#         xy = tuple(map(int, key[:2]))
-#         cv.circle(frame, xy, 10, (0, 255, 0), -1)
-#
-#     for key in traffic.keys():
-#         xy = tuple(map(int, key[:2]))
-#         cv.circle(frame, xy, 4, (0, 0, 255), -1)
-#
-#     cv.namedWindow('Frame', cv.WINDOW_NORMAL)
-#     cv.imshow('Frame', frame)
-#     if cv.waitKey(25) & 0xFF == ord('q'):
-#         cv.destroyAllWindows()
-#         return True
-# def stat_filter(stats, threshold_parking):
-#     for key in stats.keys():
-#         if stats[key] > threshold_parking:
-#             yield (key, stats[key])
 
 
-# def process_traffic(key):
-#     res_temp_set = set()
-#     res_park_set = set()
-#     for park in parking:
-#         if bbox_iou(park, key) > 0.7:
-#             res_temp_set.add(key)
-#         else:
-#             res_park_set.add(key)
-#     return (res_temp_set, res_park_set)
-# def split():
-#     global count
-#     filter_stats = {}
-#     filter_parking = {}
-#     for key, value in stats.items():  # проходим по всем парам ключ-значение
-#         if value < threshold_parking:  # если значение равно максимальному
-#             filter_stats[key] = value  # добавляем в новый словарь
-#         elif value == threshold_parking:
-#             filter_parking[key] = value
-#
-#     # if count > threshold_parking:
-#     if count == 42:
-#         print("-----------------------------------------------------------------------------")
-#         print("traffic")
-#         print("-----------------------------------------------------------------------------")
-#         print(traffic)
-#         print("-----------------------------------------------------------------------------")
-#         print("filter_parking")
-#         print("-----------------------------------------------------------------------------")
-#         print(filter_parking)
-#
-#         filter_traffic = set(filter_stats) | set(parking)
-#         res_temp = set()
-#         res_park = set()
-#         print("*******************************************************************************")
-#         print("*******************************************************************************")
-#         print("Filter stat", len(filter_stats))
-#         print("Parking", len(parking))
-#         print(len(res_park))
-#         print(len(res_temp))
-#         print("*******************************************************************************")
-#         print("*******************************************************************************")
-#
-#         for key in filter_traffic:
-#             for park in parking:
-#                 if bbox_iou(park, key) > 0.7:
-#                     res_temp.add(key)
-#                 else:
-#                     res_park.add(key)
-#
-#         res = res_park - res_temp
-#
-#         # if len(res) > 0:
-#         #     print("+++++++++++++++++++++++++ НАЙДЕН итерация: ", count, "+++++++++++++++++++++++++")
-#         #     print(filter_traffic)
-#         #     time.sleep(600)
-#         # time.sleep(600)
 
+def show(crash, parking, traffic, seven):
+    width, height = 1920, 1080
+    img = np.zeros((height, width, 3), dtype=np.uint8)
+    #
+    # for key in crash:
+    #     cv.circle(img, tuple(map(int, key[:2])), 20, (255, 0, 0), -1)   # синий
+    #
+    # for key in traffic:
+    #     cv.circle(img, tuple(map(int, key[:2])), 10, (0, 255, 0), -1) # зеленый
+
+    for key in parking:
+        cv.circle(img, tuple(map(int, key[:2])), 10, (255, 255, 255), -1) # белый
+    #
+    # for key in seven:
+    #     cv.circle(img, tuple(map(int, key[:2])), 10, (0, 0, 255), -1) # красный
+    cv.namedWindow('Frame', cv.WINDOW_NORMAL)
+    cv.imshow('Frame', img)
+
+def statistics(car_boxes):
+    global stats_buffer
+
+    if stats_buffer is None:
+        for i in range(buffer_size-1):
+            stats_buffer[i] = car_boxes
+
+    # перезаписываем последние 7 значений в буфере
+    for i in range(buffer_size-1):
+        stats_buffer[i] = stats_buffer[i+1]
+    stats_buffer[buffer_size-1] = car_boxes
+    if count >= buffer_size:
+        find_parking()
 
 def bbox_iou(boxA, boxB, x1y1x2y2=False, GIoU=False, DIoU=False, CIoU=False, eps=1e-7):
     # Returns the IoU of box1 to box2. box1 is 4, box2 is nx4
@@ -224,11 +163,26 @@ def bbox_iou(boxA, boxB, x1y1x2y2=False, GIoU=False, DIoU=False, CIoU=False, eps
     else:
         return float(iou)  # IoU
 
+def find_nearest_point(set1, set2):
+    nearest_point = None
+    min_distance = float('inf')
+    for point1 in set1:
+        for point2 in set2:
+            distance = math.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
+            if distance < min_distance:
+                min_distance = distance
+                nearest_point = point1
+    return [nearest_point]
+
 def load_images_from_folder(folder):
     images = []
 
     for name in range(0,len(os.listdir(folder))):
         filename = str(name) + ".jpg"
+        print("------------------------------------------")
+        print("----------------", filename,"--------------------------")
+        print("------------------------------------------")
+
         img = cv.imread(os.path.join(folder,filename))
         if img is not None:
             images.append(img)
@@ -236,17 +190,19 @@ def load_images_from_folder(folder):
 
 def detector_cars(frame):
     global count
-    results = model(frame, conf=0.4)  # Распознавание машины.
+    results = model(frame, conf=0.22)  # Распознавание машины.
     results = results[0].numpy()
     box = results.boxes[results.boxes.cls == 2].xywh[:, :4]  # размеры объектов
-    # split()
     count += 1
     print("------------------------ Итерация ", count, " ------------------------")
-    return tuple(box.tolist())  #
+    print("----------------------------------------------------------------------")
+    # if count == 43:
+    #     print("Буфер парковки ", parking_buffer)
+    #     time.sleep(600)
+    return box  #
 
 
 start_time = time.time()
-
 
 def make_images():
     images = load_images_from_folder("test/")
@@ -255,12 +211,7 @@ def make_images():
 
         if frame is not None:
             cars_boxes = detector_cars(frame)
-            for car_box in cars_boxes:
-                statistics(car_box, frame)
-
-            print("Парковка => ", len(parking))
-            print("Проезжая часть => ", len(traffic))
-            print("Всего =>", len(stats))
+            statistics(cars_boxes)
 
         if 0xFF == ord('q'):
             break

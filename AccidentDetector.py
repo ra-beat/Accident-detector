@@ -20,7 +20,6 @@ class RoadAccidentFinder:
         self.static_object_time = min_static_time / self.frame_interval
         # размер матрицы памяти точек объекта
         self.memory_matrix_size = memory_matrix_size
-        self.image_resolution = image_resolution
         # максимальный шаг затухания точки за одну минуту
         self.max_point_attenuation = max_point_attenuation
 

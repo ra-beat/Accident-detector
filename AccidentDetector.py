@@ -1,4 +1,5 @@
-import logging
+from ultralytics import YOLO
+import cv2 as cv
 import torch
 import math
 import numpy as np
@@ -9,7 +10,7 @@ from datetime import datetime, timedelta
 
 class RoadAccidentFinder:
 
-    def __init__(self, car_cls, min_static_time=80, frame_interval=10,
+    def __init__(self, car_cls, min_static_time=80, frame_interval=10, model = YOLO("yolov8x.pt"),
                  max_point_attenuation=2000, memory_matrix_size=(240, 430), image_resolution=1280):
         self.service_name = 'AccidentDetector'
         # интервал кадра в секундах
@@ -22,7 +23,18 @@ class RoadAccidentFinder:
         self.memory_matrix_size = memory_matrix_size
         # максимальный шаг затухания точки за одну минуту
         self.max_point_attenuation = max_point_attenuation
+        # модель YOLO
+        self.model = model
 
+
+    def detector_car(self, frame):
+        results = self.model(frame, conf=0.22)
+        results = results[0].numpy()
+        results = results.boxes[results.boxes.cls == 2].boxes
+        results[:, -2] = 0 # обнуляю вероятность
+        results[:, -1] = 0 # обнуляю класс объекта
+
+        return results
 
 
 # ========================================================================

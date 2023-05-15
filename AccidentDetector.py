@@ -36,7 +36,49 @@ class RoadAccidentFinder:
 
         return results
 
+    @staticmethod
+    def search_active_objects(storage_objects, array_objects, static_object_time):
 
+        new_static_object = []  # для добавления нового статичного объекта
+        temporary_static = []
+
+        # слияние хранилища и новых данных
+        work_array = np.vstack((storage_objects, array_objects))
+        array_len = work_array.shape[0]
+
+        # обработка массивов и поиск уникальных объектов
+        for n, item_ary in enumerate(work_array, 0):
+            unique_object = True
+            for slider in range(n + 1, array_len):
+                if bbox_iou(item_ary[:-2], work_array[slider, :-2], True) > 0.85:  # 87 89 88 85 83 80
+                    unique_object = False  # объект не уникальный
+                    work_array[n, -2] += 1  # добавить 1, если подобный объект найден
+                    if work_array[n, -2] < 1:
+                        work_array[n, -2] = 1
+                    work_array[n, -1] = 1  # установить 1, если объект не уникален
+                    work_array[slider, -1] = 1  # установить 1, если объект не уникален
+                    # поиск новых статических объектов
+                    if work_array[n, -2] > static_object_time:
+                        if work_array[n, -2] < 50:
+                            new_static_object.append(item_ary[:-2])
+                        work_array[n, -2] = 100  # гистерезис - защелка для фиксации
+            if unique_object:
+                if static_object_time >= work_array[n, -2] > 0:
+                    temporary_static.append(np.copy(work_array[n]))
+                work_array[n, -2] -= 2
+                # удаление старых статичных объектов
+                if static_object_time < work_array[n, -2] < 50:
+                    work_array[n, -2] = -1
+        # получить уникальный объект
+        new_unique_object = \
+            np.vstack(
+                (work_array[work_array[:, -1] == 0, :],
+                 work_array[(0 < work_array[:, -2]) & (work_array[:, -2] < static_object_time), :]))
+        # сохранить новые данные в хранилище
+        storage_objects = np.vstack((work_array[work_array[:, -1] == 0, :], work_array[work_array[:, -2] > 0, :]))
+        storage_objects[:, -1] = 1
+
+        return storage_objects, new_unique_object, np.array(new_static_object), np.array(temporary_static)
 # ========================================================================
 
 # calculating the intersection over the union

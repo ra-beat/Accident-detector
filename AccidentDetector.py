@@ -50,7 +50,7 @@ class RoadAccidentFinder:
         for n, item_ary in enumerate(work_array, 0):
             unique_object = True
             for slider in range(n + 1, array_len):
-                if bbox_iou(item_ary[:-2], work_array[slider, :-2], True) > 0.85:  # 87 89 88 85 83 80
+                if bbox_iou(item_ary[:-2], work_array[slider, :-2], True) > 0.80:  # 87 89 88 85 83 80
                     unique_object = False  # объект не уникальный
                     work_array[n, -2] += 1  # добавить 1, если подобный объект найден
                     if work_array[n, -2] < 1:

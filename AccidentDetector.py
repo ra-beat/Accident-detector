@@ -1,5 +1,3 @@
-from ultralytics import YOLO
-import cv2 as cv
 import torch
 import math
 import numpy as np
@@ -10,8 +8,9 @@ from datetime import datetime, timedelta
 
 class RoadAccidentFinder:
 
-    def __init__(self, car_cls, min_static_time=80, frame_interval=10, model=YOLO("yolov8x.pt"),
+    def __init__(self, car_cls, min_static_time=80, frame_interval=10,
                  max_point_attenuation=2000, memory_matrix_size=(240, 430), image_resolution=1280):
+        self.cameras_id = []
         self.service_name = 'AccidentDetector'
         # интервал кадра в секундах
         self.frame_interval = frame_interval
@@ -23,8 +22,6 @@ class RoadAccidentFinder:
         self.memory_matrix_size = memory_matrix_size
         # максимальный шаг затухания точки за одну минуту
         self.max_point_attenuation = max_point_attenuation
-        # модель YOLO
-        self.model = model
         # входное разрешение координат массива для масштабирования
         self.input_resolution = \
             np.array([image_resolution, image_resolution / 1.777, image_resolution, image_resolution / 1.777, 1, 1])
@@ -68,17 +65,159 @@ class RoadAccidentFinder:
 
         return
 
-    #=================================================================================================================
-    #==================================== дописать процессор поиска аварий ===========================================
+    def road_accident_process(self, camera_id, prediction_data):
+        # подготовить массив объектов - сохранить только объект автомобиля
+        try:
+            object_car = prediction_data[prediction_data[:, -1] == self.car_cls]
+        except IndexError:
+            return None
+
+        accident_object = None  # для добавленных объектов аварии
+
+        # if empty frame (car not found)
+        if not torch.any(object_car):
+            return accident_object
+
+        # преобразовать pytorch в массив numpy и абсолютизировать координаты
+        object_car = object_car.detach().numpy()
+        object_car = object_car / self.input_resolution  # Преобразование в абсолютные координаты
+
+        # фильтрованный массив объектов автомобиль
+        self.storage_static_objects[camera_id], active_object, static_object, temporary_static = \
+            self.search_active_objects(self.storage_static_objects[camera_id], object_car, self.static_object_time)
+        # сохранить новые активные точки boxes.xyxy  # box with xyxy format, (N, 4)  для get_median_point
+        self.save_point_object(camera_id, self.get_median_point(active_object))
+
+        # проверить расписание
+        if self.check_schedule(camera_id):
+            # плавное исчезновение точек на матрице
+            self.process_fading_points(camera_id, self.get_point_attenuation(camera_id))
+        # проверить новый статический объект
+        if static_object.any():
+            for object_point in static_object:
+                if self.check_status_object(camera_id, object_point):
+                    accident_object = static_object
+                else:
+                    # удалить статический объект из матрицы памяти
+                    self.delete_points(camera_id, object_point)
+
+        return accident_object
+
+    def delete_points(self, camera_id, point):
+        # рассчитать размер объекта на матрице
+        object_width, object_height, object_point = self.calculate_size_object(point)
+        # рассчет координат
+        y1 = int(max(0, object_point[0] - object_height / 2))
+        x1 = int(max(0, object_point[1] - object_width / 2))
+        y2 = int(min(self.memory_matrix_size[0], object_point[0] + object_height / 2))
+        x2 = int(min(self.memory_matrix_size[1], object_point[1] + object_width / 2))
+        # обнуление 2d среза статических объектов
+        self.storage_matrix_memory[camera_id][y1:y2, x1:x2] = 0
+        return
+
+    # =================================================================================================================
+    # ==================================== дописать процессор поиска аварий ===========================================
 
     # сохранить активную точку объекта в матрицу
     def save_point_object(self, camera_id, object_point):
-        # x, y -> y, x
-        # object_point = np.flip(object_point)
-        # масштабировать координаты точки
+
         object_point = (object_point * self.memory_matrix_size).astype(int)
         # установить точки в матрицу
         self.storage_matrix_memory[camera_id][object_point[:, 0], object_point[:, 1]] = 65535
+        return
+
+    def get_point_attenuation(self, camera_id):
+        # рассчитать относительное количество баллов
+        relative_quantity = np.count_nonzero(self.storage_matrix_memory[camera_id]) / (self.memory_matrix_size[0] *
+                                                                                       self.memory_matrix_size[1])
+        # коэффициент предварительного усиления
+        relative_quantity = min(1, relative_quantity * 10)
+        # шаг затухания
+        return int(self.max_point_attenuation * relative_quantity * self.time_interval)
+
+    def calculate_size_object(self, object_point):
+        object_width = int(abs(object_point[0] - object_point[2]) * self.memory_matrix_size[1])
+        object_height = int(abs(object_point[1] - object_point[3]) * self.memory_matrix_size[0])
+        # усредненная точка объекта
+        object_point = (abs(object_point[1] - (object_point[1] - object_point[3]) / 2) * self.memory_matrix_size[0],
+                        abs(object_point[0] - (object_point[0] - object_point[2]) / 2) * self.memory_matrix_size[1])
+        return object_width, object_height, object_point
+
+    def check_status_object(self, camera_id, object_point):
+        # проверка позиции объекта
+        min_num_point = 13
+        # максимальный процент разности луча
+        max_differences = 0.5
+        # длина сканирующего луча
+        length_beam = 3
+        # рассчитать размер объекта на матрице
+        object_width, object_height, object_point = self.calculate_size_object(object_point)
+        half_size = min(object_width, object_height) / 2  # рассчитать половину максимального размера объекта
+        # рассчитать координаты сканирующего луча
+        beam_coordinates = [
+            [max(0, object_point[0] - half_size),  # Y1
+             max(0, object_point[1] - half_size * length_beam),  # X1
+             min(self.memory_matrix_size[0], object_point[0] + half_size),  # Y2
+             min(self.memory_matrix_size[1], object_point[1] + half_size * length_beam)],  # X2
+            [min(self.memory_matrix_size[0], object_point[0] + half_size),  # Y3
+             max(0, object_point[1] - half_size * length_beam),  # X3
+             max(0, object_point[0] - half_size),  # Y4
+             min(self.memory_matrix_size[1], object_point[1] + half_size * length_beam)],  # X4
+            [max(0, object_point[0] - half_size * length_beam),  # Y5
+             max(0, object_point[1] - half_size),  # X5
+             min(self.memory_matrix_size[0], object_point[0] + half_size * length_beam),  # Y6
+             min(self.memory_matrix_size[1], object_point[1] + half_size)],  # X6
+            [max(0, object_point[0] - half_size * length_beam),  # Y7
+             min(self.memory_matrix_size[1], object_point[1] + half_size),  # X7
+             min(self.memory_matrix_size[0], object_point[0] + half_size * length_beam),  # Y8
+             max(0, object_point[1] - half_size)]  # X8
+        ]
+
+        # проверить положение объекта
+        for beam in beam_coordinates:
+            # beam a
+            y_a1 = int(min(object_point[0], beam[0]))
+            y_a2 = int(max(object_point[0], beam[0]))
+            x_a1 = int(min(object_point[1], beam[1]))
+            x_a2 = int(max(object_point[1], beam[1]))
+            count_a = np.count_nonzero(self.storage_matrix_memory[camera_id][y_a1:y_a2, x_a1:x_a2])
+            # beam b
+            y_b1 = int(min(object_point[0], beam[2]))
+            y_b2 = int(max(object_point[0], beam[2]))
+            x_b1 = int(min(object_point[1], beam[3]))
+            x_b2 = int(max(object_point[1], beam[3]))
+            count_b = np.count_nonzero(self.storage_matrix_memory[camera_id][y_b1:y_b2, x_b1:x_b2])
+            # проверка результата
+            if count_a < min_num_point or count_b < min_num_point:  # not enough point
+                continue
+            # расчёт соотношения луча
+            beam_ratio = 1 - min(count_a, count_b) / max(count_a, count_b)
+
+            if beam_ratio < max_differences:  # соотношение находится в допустимых пределах
+                return True
+        return False  # авария не найдена
+
+    # процесс выцветания точек
+    def process_fading_points(self, camera_id, point_attenuation):
+        # радиус для поиска соседних точек
+        search_radius = 2
+        max_points = (1 + search_radius + search_radius) ** 2
+        # удаление меленьких значений
+        self.storage_matrix_memory[camera_id][self.storage_matrix_memory[camera_id] < point_attenuation] = 0
+        # активная точка поиска и декремент
+        indexes = np.where(self.storage_matrix_memory[camera_id] > 0)
+        coordinates = zip(indexes[0], indexes[1])  # преобразовать в (y, x) точку координат на матрице
+        # точка поиска вокруг
+        for coordinate in coordinates:
+            y1 = max(0, coordinate[0] - search_radius)
+            x1 = max(0, coordinate[1] - search_radius)
+            y2 = min(self.memory_matrix_size[0], coordinate[0] + search_radius)
+            x2 = min(self.memory_matrix_size[1], coordinate[1] + search_radius)
+            # рассчитать ослабление точки охлаждения
+            weakening_cooling = 1 - np.count_nonzero(self.storage_matrix_memory[camera_id][y1:y2, x1:x2]) / max_points
+
+            self.storage_matrix_memory[camera_id][coordinate] -= int(point_attenuation * weakening_cooling)
+
         return
 
     @staticmethod
@@ -124,6 +263,20 @@ class RoadAccidentFinder:
         storage_objects[:, -1] = 1
 
         return storage_objects, new_unique_object, np.array(new_static_object), np.array(temporary_static)
+
+    def check_schedule(self, camera_id):
+        if self.time_schedule[camera_id] + timedelta(minutes=self.time_interval) < datetime.now():
+            self.time_schedule[camera_id] = datetime.now()
+            return True
+        return False
+
+    @staticmethod
+    def get_median_point(array_objects):
+        """calculating the midpoints of objects"""
+        point_array = np.dstack((np.absolute((array_objects[:, 1] - (array_objects[:, 1] - array_objects[:, 3]) / 2)),
+                                 (np.absolute(array_objects[:, 0] - (array_objects[:, 0] - array_objects[:, 2]) / 2))))
+
+        return np.squeeze(point_array, axis=0)
 
 
 # ========================================================================

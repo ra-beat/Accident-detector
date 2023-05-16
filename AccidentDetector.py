@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 class RoadAccidentFinder:
 
-    def __init__(self, car_cls, min_static_time=80, frame_interval=10, model = YOLO("yolov8x.pt"),
+    def __init__(self, car_cls, min_static_time=80, frame_interval=10, model=YOLO("yolov8x.pt"),
                  max_point_attenuation=2000, memory_matrix_size=(240, 430), image_resolution=1280):
         self.service_name = 'AccidentDetector'
         # интервал кадра в секундах
@@ -25,16 +25,61 @@ class RoadAccidentFinder:
         self.max_point_attenuation = max_point_attenuation
         # модель YOLO
         self.model = model
+        # входное разрешение координат массива для масштабирования
+        self.input_resolution = \
+            np.array([image_resolution, image_resolution / 1.777, image_resolution, image_resolution / 1.777, 1, 1])
+        # хранилище времени жизни статических объектов
+        self.storage_time_static = {}  # {camera_id: [time_1, time_2, ...time 20], ...}
+        self.storage_time_length = 20
+        # данные подключения камеры
+        self.cameras_connection_data = []
+        # размер матрицы памяти точек объекта
+        self.memory_matrix_size = memory_matrix_size
+        # хранилище данных матрицы
+        self.storage_matrix_memory = {}
+        # хранилище статических объектов
+        self.storage_static_objects = {}  # {camera_id: object_array, ...}
+        # таймер расписания (минуты)
+        self.time_interval = 10
+        self.time_schedule = {}
 
+    def set_camera_connection_list(self, cameras_connection_data):
+        # распакованный словарь данных для списка со значениями [[stream_id, stream_address], ...]
+        cameras_connection_data = [list(x.values()) for x in cameras_connection_data]
+        if self.cameras_connection_data != cameras_connection_data:
+            self.cameras_id = [_[0] for _ in cameras_connection_data]  # извлечение id камеры
+            self.cameras_connection_data = cameras_connection_data
+            # Обновить данные о потоке обработки и удалить старые данные
+            self.storage_matrix_memory = \
+                {key: self.storage_matrix_memory[key]
+                if key in self.storage_matrix_memory else np.zeros(self.memory_matrix_size, dtype=np.uint16)
+                 for key in self.cameras_id}
+            self.storage_static_objects = \
+                {key: self.storage_static_objects[key] if key in self.storage_static_objects else np.empty((0, 6))
+                 for key in self.cameras_id}
+            self.time_schedule = \
+                {key: self.time_schedule[key]
+                if key in self.time_schedule else datetime.now() - timedelta(minutes=self.time_interval)
+                 for key in self.cameras_id}
+            self.storage_time_static = \
+                {key: self.storage_time_static[key]
+                if key in self.storage_time_static else [int(self.static_object_time / 2)] * self.storage_time_length
+                 for key in self.cameras_id}
 
-    def detector_car(self, frame):
-        results = self.model(frame, conf=0.22)
-        results = results[0].numpy()
-        results = results.boxes[results.boxes.cls == 2].boxes
-        results[:, -2] = 0 # обнуляю вероятность
-        results[:, -1] = 0 # обнуляю класс объекта
+        return
 
-        return results
+    #=================================================================================================================
+    #==================================== дописать процессор поиска аварий ===========================================
+
+    # сохранить активную точку объекта в матрицу
+    def save_point_object(self, camera_id, object_point):
+        # x, y -> y, x
+        # object_point = np.flip(object_point)
+        # масштабировать координаты точки
+        object_point = (object_point * self.memory_matrix_size).astype(int)
+        # установить точки в матрицу
+        self.storage_matrix_memory[camera_id][object_point[:, 0], object_point[:, 1]] = 65535
+        return
 
     @staticmethod
     def search_active_objects(storage_objects, array_objects, static_object_time):
@@ -79,6 +124,8 @@ class RoadAccidentFinder:
         storage_objects[:, -1] = 1
 
         return storage_objects, new_unique_object, np.array(new_static_object), np.array(temporary_static)
+
+
 # ========================================================================
 
 # calculating the intersection over the union

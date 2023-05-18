@@ -74,7 +74,7 @@ if __name__ == '__main__':
 
     connection_data = [
             (90627, "https://s2.moidom-stream.ru/s/public/0000090627.m3u8"),
-            (1241, "https://s3.moidom-stream.ru/s/public/0000001241.m3u8"),
+            # (1241, "https://s3.moidom-stream.ru/s/public/0000001241.m3u8"), # Куковское кольцо
             (192, "https://s3.moidom-stream.ru/s/public/0000000192.m3u8"),
             (1391, "https://s2.moidom-stream.ru/s/public/0000001391.m3u8"),
             (1993, "https://s2.moidom-stream.ru/s/public/0000001993.m3u8")

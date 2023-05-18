@@ -5,6 +5,9 @@ from images_storage import SaveImage
 import torch
 from Video_detector import VideoDetector
 from road_accident import RoadAccidentFinder
+from dotenv import load_dotenv
+import os
+from telegram_notification import TelegramNotification
 
 
 def processing():
@@ -28,6 +31,7 @@ def processing():
         # поиск аварий
         if (accident_object := road_accident_finder.road_accident_process(camera_id, det)) is not None:
             print("  Find accident!!!  for objects:  " + str(accident_object[0]))
+            telegram_notification.send_image(image, accident_object[0], camera_id)
             save_image.save_road_accident_image(image, accident_object[0])
         if save_test_image:
             save_image.save_test_image(camera_id, road_accident_finder.get_test_map(camera_id))
@@ -47,6 +51,14 @@ if __name__ == '__main__':
     image_resolution = 1280
     capture_interval = 10
 
+    dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+    if os.path.exists(dotenv_path):
+        load_dotenv(dotenv_path)
+
+    bot_token = os.getenv('BOT_TOKEN')
+    group_id = os.getenv('GROUP_ID')
+
+
     # отправляю кадр, для детектора
     detector = VideoDetector(
         cuda_type, weights, image_size_input,
@@ -57,6 +69,8 @@ if __name__ == '__main__':
     save_image = SaveImage("/home/user/simple_road_accident/", "road_accident", "test_image", detector.names, car_cls, detector.scale, 1280)
 
     road_accident_finder = RoadAccidentFinder(car_cls=car_cls, min_static_time=80, frame_capture_interval=10, max_point_attenuation=2000)
+
+    telegram_notification = TelegramNotification(bot_token, group_id)
 
     connection_data = [
             (3029, "https://s3.moidom-stream.ru/s/public/0000003029.m3u8"),

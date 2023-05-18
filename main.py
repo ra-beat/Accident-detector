@@ -73,8 +73,11 @@ if __name__ == '__main__':
     telegram_notification = TelegramNotification(bot_token, group_id)
 
     connection_data = [
-            (3029, "https://s3.moidom-stream.ru/s/public/0000003029.m3u8"),
-            (6207, "https://s3.moidom-stream.ru/s/public/0000006207.m3u8")
+            (90627, "https://s2.moidom-stream.ru/s/public/0000090627.m3u8"),
+            (1241, "https://s3.moidom-stream.ru/s/public/0000001241.m3u8"),
+            (192, "https://s3.moidom-stream.ru/s/public/0000000192.m3u8"),
+            (1391, "https://s2.moidom-stream.ru/s/public/0000001391.m3u8"),
+            (1993, "https://s2.moidom-stream.ru/s/public/0000001993.m3u8")
         ]
 
     detector.set_cameras(connection_data)

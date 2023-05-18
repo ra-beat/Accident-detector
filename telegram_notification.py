@@ -15,7 +15,7 @@ class TelegramNotification:
             image = draw_polylines(image, point)
 
         image = im.fromarray(image)
-        caption = caption + ' ' + datetime.now().strftime("%Y-%m-%d %H:%M")
+        caption = str(caption) + ' ' + datetime.now().strftime("%Y-%m-%d %H:%M")
         self.bot.send_photo(self.group_id, photo=image, caption=caption)
 
 

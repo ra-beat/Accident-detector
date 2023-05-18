@@ -148,8 +148,6 @@ class VideoDetector:
                                     stride=self.stride)
 
             pred = self.model(image)[0]  # предсказываю объекты
-
-            print(self.object_confidence_threshold)
             pred = non_max_suppression(pred, self.object_confidence_threshold, self.IOU_threshold_NMS)[0]
             return pred, camera_id, img, image.shape[2:]
         else:

@@ -3,7 +3,7 @@
 from utils.general import scale_coords
 from images_storage import SaveImage
 import torch
-from Video_detector import VideoDetector
+from video_detector import VideoDetector
 from road_accident import RoadAccidentFinder
 from dotenv import load_dotenv
 import os

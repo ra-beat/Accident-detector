@@ -69,7 +69,7 @@ class VideoDetector:
 
         self.image_resolution = (int(image_resolution / 1.777), image_resolution, 3)
         self.scale = torch.tensor(self.image_resolution)[[1, 0, 1, 0]]
-
+        self.img_size = (self.image_resolution[1], self.image_resolution[0])
         # захват кадров
         self.capture_interval = timedelta(seconds=capture_interval)
         self.stream_address = []  # [(camera_id, address), ...]
@@ -142,7 +142,7 @@ class VideoDetector:
                 print("Connection error:" + str(er))
 
             capture.release()
-
+            img = cv2.resize(img, self.img_size)
             # проверябю изображение
             image = normalize_image(img, device=self.device, half=self.half, img_size=self.image_size_input,
                                     stride=self.stride)

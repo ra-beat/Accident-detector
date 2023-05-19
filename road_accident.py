@@ -9,7 +9,8 @@ class RoadAccidentFinder:
 
     def __init__(self, car_cls,
                  min_static_time=80, frame_capture_interval=10,
-                 max_point_attenuation=2000, memory_matrix_size=(240, 430), image_resolution=1280):
+                 max_point_attenuation=2000, memory_matrix_size=(240, 430), image_resolution=1280):  # memory_matrix_size=(240, 430) IndexError: index 320 is out of bounds for axis 0 with size 240
+
         # интервал захвата кадра секунд
         self.frame_capture_interval = frame_capture_interval
         # размер матрицы памяти точек объекта

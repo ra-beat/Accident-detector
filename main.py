@@ -66,7 +66,7 @@ if __name__ == '__main__':
         image_resolution, capture_interval)
 
     # сохраняю изображение с указанным размером
-    save_image = SaveImage("/home/user/simple_road_accident/", "road_accident", "test_image", detector.names, car_cls, detector.scale, 1280)
+    save_image = SaveImage("/home/user/Accident-detector/", "road_accident", "test_image", "positive_image",detector.names, car_cls, detector.scale, 1280)
 
     road_accident_finder = RoadAccidentFinder(car_cls=car_cls, min_static_time=80, frame_capture_interval=10, max_point_attenuation=2000)
 

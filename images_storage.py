@@ -10,13 +10,14 @@ from numpy import random
 # Сохранение изображений НЕЗАБЫТЬ УБРАТЬ КОМЕНТЫ!
 class SaveImage:
 
-    def __init__(self, main_work_directory, path_road_accident, path_test, names_obj,
+    def __init__(self, main_work_directory, path_road_accident, path_test, path_positive, names_obj,
                  car_cls, image_scale, img_size=640):
 
         self.image_scale = image_scale
         self.car_cls = car_cls
         self.path_road_accident = str(Path(main_work_directory + path_road_accident).absolute()) + '/'
         self.path_result = str(Path(main_work_directory + path_test).absolute()) + '/'
+        self.path_positive = str(Path(main_work_directory + path_positive).absolute()) + '/'
         self.img_size = img_size
         self.names_obj = names_obj
         self.colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(names_obj))]
@@ -108,12 +109,12 @@ class SaveImage:
 
         image = np.copy(img)
 
-        # записывает красные границы объекта
-        for point in points:
-
-            image = self.draw_polylines(image, point)
         self.__save_image(image, path_img + file_name + '.jpg', self.img_size)
         return path_img + file_name + '.jpg', file_name
+
+    def save_positive_image(self, img):
+        path_img, link_image = self.__get_new_date_path(img.path_positive)
+        file_name = self.__get_name_new_file(path_img)
 
     # вырезает из изображения
     @staticmethod
